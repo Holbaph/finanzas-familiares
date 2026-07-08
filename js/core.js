@@ -334,7 +334,7 @@ const DB = {
 
   exportAll() {
     return JSON.stringify({
-      version: 3,
+      version: 4,
       exportadoEn: new Date().toISOString(),
       deudas: this.getDeudas(),
       pagos: this.getPagos(),
@@ -344,6 +344,7 @@ const DB = {
       empresas: this.getEmpresas(),
       categorias: this.getCategorias(),
       pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
+      biometric: (typeof Biometric !== 'undefined') ? Biometric.getConfig() : null,
     }, null, 2);
   },
   importAll(json) {
@@ -357,6 +358,7 @@ const DB = {
     if (data.empresas) this.saveEmpresas(data.empresas);
     if (data.categorias) this.saveCategorias(data.categorias);
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
+    if (data.biometric && typeof Biometric !== 'undefined') Biometric.setConfig(data.biometric);
   },
   resetAll() {
     localStorage.removeItem(STORAGE_KEYS.deudas);
@@ -367,6 +369,7 @@ const DB = {
     localStorage.removeItem(STORAGE_KEYS.empresas);
     localStorage.removeItem(STORAGE_KEYS.categorias);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
+    if (typeof Biometric !== 'undefined') { Biometric.disable(); localStorage.removeItem(Biometric.KEY); }
     if (window.indexedDB) indexedDB.deleteDatabase('ff_photos_db');
   },
 

@@ -170,9 +170,12 @@
       <div class="section-block">
         <h2>Seguridad</h2>
         <p class="muted" id="lockStatusText">Bloqueo con PIN desactivado.</p>
-        <button id="btnConfigurarPin" class="btn btn-secondary full">Activar bloqueo con PIN</button>
+        <button id="btnConfigurarPin" class="btn btn-secondary full">Activar bloqueo con PIN (4 dígitos)</button>
         <button id="btnCambiarPin" class="btn btn-secondary full hidden">Cambiar PIN</button>
-        <button id="btnDesactivarPin" class="btn btn-secondary full hidden">Desactivar bloqueo</button>
+        <button id="btnDesactivarPin" class="btn btn-secondary full hidden">Desactivar bloqueo con PIN</button>
+        <p class="muted" id="bioStatusText" style="margin-top:14px"></p>
+        <button id="btnActivarBio" class="btn btn-secondary full hidden">Activar Face ID / Touch ID</button>
+        <button id="btnDesactivarBio" class="btn btn-secondary full hidden">Desactivar Face ID / Touch ID</button>
         <button id="btnBloquearAhora" class="btn btn-secondary full hidden">Bloquear ahora</button>
       </div>
       <div class="section-block">
@@ -218,16 +221,19 @@
 
 </div>
 
-<!-- ============ BLOQUEO CON PIN ============ -->
+<!-- ============ BLOQUEO CON PIN / FACE ID ============ -->
 <div id="lockOverlay" class="lock-overlay">
   <div class="lock-box">
     <div class="lock-icon">🔒</div>
     <h2>Finanzas Familiares</h2>
-    <p class="muted">Ingresa tu PIN para continuar</p>
-    <input type="password" id="lockPinInput" class="lock-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="••••">
-    <p id="lockError" class="lock-error hidden">PIN incorrecto, intenta de nuevo.</p>
-    <button class="btn btn-primary full" id="btnLockUnlock">Desbloquear</button>
-    <button class="btn btn-text full" id="btnLockForgot">¿Olvidaste tu PIN?</button>
+    <p class="muted" id="lockSubtitle">Ingresa tu PIN para continuar</p>
+    <button class="btn btn-primary full" id="btnUsarFaceId" style="display:none">🔓 Usar Face ID / Touch ID</button>
+    <div id="lockPinSection">
+      <input type="password" id="lockPinInput" class="lock-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="••••">
+      <p id="lockError" class="lock-error hidden">PIN incorrecto, intenta de nuevo.</p>
+      <button class="btn btn-secondary full" id="btnLockUnlock">Desbloquear con PIN</button>
+    </div>
+    <button class="btn btn-text full" id="btnLockForgot">¿No puedes ingresar?</button>
   </div>
 </div>
 

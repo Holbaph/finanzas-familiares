@@ -26,17 +26,31 @@ const ICONOS_DEUDA = [
   '🍔', '☕', '🎁', '💊', '📦', '💰', '📌',
 ];
 
+function protegida() {
+  return Lock.isEnabled() || Biometric.isEnabled();
+}
+
+function mostrarPantallaBloqueo() {
+  Lock.showOverlay();
+  document.getElementById('lockPinSection').style.display = Lock.isEnabled() ? '' : 'none';
+  document.getElementById('btnUsarFaceId').style.display = Biometric.isEnabled() ? '' : 'none';
+  document.getElementById('lockSubtitle').textContent = Lock.isEnabled() && Biometric.isEnabled()
+    ? 'Usa Face ID / Touch ID o tu PIN para continuar'
+    : Biometric.isEnabled() ? 'Usa Face ID / Touch ID para continuar' : 'Ingresa tu PIN para continuar';
+  if (Biometric.isEnabled()) intentarBiometrico();
+}
+
 function boot() {
   applyTheme(DB.getMeta().tema || 'auto');
   wireLock();
-  if (Lock.isEnabled()) {
-    Lock.showOverlay();
+  if (protegida()) {
+    mostrarPantallaBloqueo();
   } else {
     document.documentElement.classList.remove('locked-boot');
     init();
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && Lock.isEnabled()) Lock.showOverlay();
+    if (document.hidden && protegida()) mostrarPantallaBloqueo();
   });
 }
 
@@ -1104,18 +1118,19 @@ function wireMaestros() {
   renderMaestros();
 }
 
-// ---------- Seguridad (PIN) ----------
+// ---------- Seguridad (PIN + Face ID / Touch ID) ----------
 function wireLock() {
   document.getElementById('btnLockUnlock').addEventListener('click', intentarDesbloquear);
   document.getElementById('lockPinInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') intentarDesbloquear();
   });
   document.getElementById('lockPinInput').addEventListener('input', (e) => {
-    const esperado = (Lock.getConfig() || {}).length || 4;
-    if (e.target.value.length >= esperado) intentarDesbloquear();
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, Lock.PIN_LARGO);
+    if (e.target.value.length >= Lock.PIN_LARGO) intentarDesbloquear();
   });
+  document.getElementById('btnUsarFaceId').addEventListener('click', intentarBiometrico);
   document.getElementById('btnLockForgot').addEventListener('click', () => {
-    if (confirm('Esto borrará TODOS los datos de la app (deudas, gastos, ingresos y fotos) para quitar el PIN olvidado. ¿Continuar?')) {
+    if (confirm('Esto borrará TODOS los datos de la app (deudas, gastos, ingresos y fotos) para restablecer el acceso. ¿Continuar?')) {
       DB.resetAll();
       location.reload();
     }
@@ -1123,6 +1138,7 @@ function wireLock() {
 }
 
 async function intentarDesbloquear() {
+  if (!Lock.isEnabled()) return;
   const input = document.getElementById('lockPinInput');
   const ok = await Lock.verify(input.value);
   if (ok) {
@@ -1136,6 +1152,19 @@ async function intentarDesbloquear() {
   }
 }
 
+async function intentarBiometrico() {
+  if (!Biometric.isEnabled()) return;
+  try {
+    const ok = await Biometric.verificar();
+    if (ok) {
+      Lock.hideOverlay();
+      init();
+    }
+  } catch (e) {
+    // El usuario canceló Face ID o falló; se queda en la pantalla de bloqueo (puede reintentar o usar PIN).
+  }
+}
+
 function wireSeguridad() {
   document.getElementById('btnConfigurarPin').addEventListener('click', () => openPinSetupForm(false));
   document.getElementById('btnCambiarPin').addEventListener('click', () => openPinSetupForm(true));
@@ -1143,49 +1172,83 @@ function wireSeguridad() {
     if (confirm('¿Desactivar el bloqueo con PIN?')) {
       Lock.disable();
       renderLockUi();
-      showToast('Bloqueo desactivado');
+      showToast('Bloqueo con PIN desactivado');
+    }
+  });
+  document.getElementById('btnActivarBio').addEventListener('click', async () => {
+    try {
+      await Biometric.registrar();
+      renderLockUi();
+      showToast('Face ID / Touch ID activado');
+    } catch (e) {
+      showToast('No se pudo activar (¿cancelaste o el teléfono no tiene Face ID configurado?)');
+    }
+  });
+  document.getElementById('btnDesactivarBio').addEventListener('click', () => {
+    if (confirm('¿Desactivar Face ID / Touch ID?')) {
+      Biometric.disable();
+      renderLockUi();
+      showToast('Face ID / Touch ID desactivado');
     }
   });
   document.getElementById('btnBloquearAhora').addEventListener('click', () => {
-    if (!Lock.isEnabled()) { showToast('Primero activa un PIN'); return; }
-    Lock.showOverlay();
+    if (!protegida()) { showToast('Primero activa un PIN o Face ID'); return; }
+    mostrarPantallaBloqueo();
   });
   renderLockUi();
 }
 
-function renderLockUi() {
+async function renderLockUi() {
   const enabled = Lock.isEnabled();
   document.getElementById('lockStatusText').textContent = enabled
     ? 'Bloqueo con PIN activado.'
-    : 'Bloqueo con PIN desactivado. Actívalo para que nadie más pueda abrir la app.';
+    : 'Bloqueo con PIN desactivado.';
   document.getElementById('btnConfigurarPin').classList.toggle('hidden', enabled);
   document.getElementById('btnCambiarPin').classList.toggle('hidden', !enabled);
   document.getElementById('btnDesactivarPin').classList.toggle('hidden', !enabled);
-  document.getElementById('btnBloquearAhora').classList.toggle('hidden', !enabled);
+  document.getElementById('btnBloquearAhora').classList.toggle('hidden', !protegida());
+
+  const bioDisponible = await Biometric.isAvailable();
+  const bioActivo = Biometric.isEnabled();
+  const bioStatusText = document.getElementById('bioStatusText');
+  if (!bioDisponible) {
+    bioStatusText.textContent = 'Face ID / Touch ID no está disponible en este dispositivo o navegador.';
+  } else {
+    bioStatusText.textContent = bioActivo
+      ? 'Face ID / Touch ID activado.'
+      : 'Face ID / Touch ID disponible: actívalo para desbloquear sin escribir el PIN.';
+  }
+  document.getElementById('btnActivarBio').classList.toggle('hidden', !bioDisponible || bioActivo);
+  document.getElementById('btnDesactivarBio').classList.toggle('hidden', !bioActivo);
 }
 
 function openPinSetupForm(cambiando) {
   openSheet(`
     <h2>${cambiando ? 'Cambiar PIN' : 'Activar bloqueo con PIN'}</h2>
     <div class="form-group">
-      <label>Nuevo PIN (4 a 6 dígitos)</label>
-      <input type="password" id="f-pin1" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="lock-input" style="letter-spacing:6px; font-size:20px;">
+      <label>Nuevo PIN (4 dígitos)</label>
+      <input type="password" id="f-pin1" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="lock-input" style="letter-spacing:6px; font-size:20px;">
     </div>
     <div class="form-group">
       <label>Confirma el PIN</label>
-      <input type="password" id="f-pin2" inputmode="numeric" pattern="[0-9]*" maxlength="6" class="lock-input" style="letter-spacing:6px; font-size:20px;">
+      <input type="password" id="f-pin2" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="lock-input" style="letter-spacing:6px; font-size:20px;">
     </div>
-    <p id="pinFormError" class="lock-error hidden">Los PIN no coinciden o son muy cortos (mínimo 4 dígitos).</p>
+    <p id="pinFormError" class="lock-error hidden">Los PIN no coinciden o no tienen 4 dígitos.</p>
     <div class="sheet-actions">
       <button class="btn btn-primary full" id="btnGuardarPin">Guardar</button>
       <button class="btn btn-secondary full" id="btnCancelarPin">Cancelar</button>
     </div>
   `);
+  ['f-pin1', 'f-pin2'].forEach(id => {
+    document.getElementById(id).addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '').slice(0, Lock.PIN_LARGO);
+    });
+  });
   document.getElementById('btnCancelarPin').addEventListener('click', closeSheet);
   document.getElementById('btnGuardarPin').addEventListener('click', async () => {
     const p1 = document.getElementById('f-pin1').value;
     const p2 = document.getElementById('f-pin2').value;
-    if (p1.length < 4 || p1 !== p2) {
+    if (p1.length !== Lock.PIN_LARGO || p1 !== p2) {
       document.getElementById('pinFormError').classList.remove('hidden');
       return;
     }
