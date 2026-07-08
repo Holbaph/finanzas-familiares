@@ -693,10 +693,16 @@ function openGastoForm(gasto, tipoDefault) {
     tipo: tipoDefault || 'consumo', detalle: '', monto: '', fecha: new Date().toISOString().slice(0, 10),
     categoria: CATEGORIAS_CONSUMO[0], notas: '',
   };
-  const esRendir = g.tipo === 'rendir';
 
   openSheet(`
-    <h2>${editing ? 'Editar gasto' : (esRendir ? 'Nuevo gasto por rendir' : 'Nuevo consumo')}</h2>
+    <h2>${editing ? 'Editar gasto' : 'Nuevo gasto'}</h2>
+    <div class="form-group">
+      <label>Tipo de gasto</label>
+      <div class="segmented" id="f-tipo-gasto-segmented">
+        <button type="button" data-tipo="consumo" class="${g.tipo === 'consumo' ? 'active' : ''}">Consumo propio</button>
+        <button type="button" data-tipo="rendir" class="${g.tipo === 'rendir' ? 'active' : ''}">Por rendir a empresa</button>
+      </div>
+    </div>
     <div class="form-group">
       <label>Detalle</label>
       <input type="text" id="f-detalle" value="${escapeAttr(g.detalle)}" placeholder="Ej: Almuerzo, Bencina, Materiales...">
@@ -711,21 +717,20 @@ function openGastoForm(gasto, tipoDefault) {
         <input type="date" id="f-fecha" value="${g.fecha}">
       </div>
     </div>
-    ${!esRendir ? `
-    <div class="form-group">
+    <div class="form-group" id="f-categoria-group" style="${g.tipo === 'rendir' ? 'display:none' : ''}">
       <label>Categoría</label>
       <select id="f-categoria">
         ${CATEGORIAS_CONSUMO.map(c => `<option value="${c}" ${c === g.categoria ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
-    </div>` : ''}
+    </div>
     <div class="form-group">
       <label>Notas (opcional)</label>
       <textarea id="f-notas">${escapeHtml(g.notas || '')}</textarea>
     </div>
     <div class="form-group">
-      <label>Foto de la boleta</label>
+      <label>Foto de la boleta (opcional)</label>
       <div class="photo-attach-row">
-        <div id="previewBoleta">${g.fotoBoletaId ? '<div class="photo-preview-empty">🧾</div>' : '<div class="photo-preview-empty">🧾</div>'}</div>
+        <div id="previewBoleta"><div class="photo-preview-empty">🧾</div></div>
         <button type="button" class="btn-photo" id="btnTomarBoleta">📷 Tomar / adjuntar foto</button>
         <input type="file" id="inputBoleta" accept="image/*" capture="environment" hidden>
       </div>
@@ -735,6 +740,15 @@ function openGastoForm(gasto, tipoDefault) {
       <button class="btn btn-secondary full" id="btnCancelarGasto">Cancelar</button>
     </div>
   `);
+
+  const tipoSeg = document.getElementById('f-tipo-gasto-segmented');
+  tipoSeg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      tipoSeg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('f-categoria-group').style.display = b.dataset.tipo === 'rendir' ? 'none' : '';
+    });
+  });
 
   let fotoBoletaId = g.fotoBoletaId || null;
   if (fotoBoletaId) {
@@ -756,6 +770,8 @@ function openGastoForm(gasto, tipoDefault) {
 
   document.getElementById('btnCancelarGasto').addEventListener('click', closeSheet);
   document.getElementById('btnGuardarGasto').addEventListener('click', () => {
+    const tipo = tipoSeg.querySelector('button.active').dataset.tipo;
+    const esRendir = tipo === 'rendir';
     const detalle = document.getElementById('f-detalle').value.trim();
     const monto = Utils.parseCLP(document.getElementById('f-monto').value);
     const fecha = document.getElementById('f-fecha').value || new Date().toISOString().slice(0, 10);
@@ -764,10 +780,12 @@ function openGastoForm(gasto, tipoDefault) {
     if (!detalle || !monto) { showToast('Completa detalle y monto'); return; }
 
     if (editing) {
-      DB.updateGasto(gasto.id, { detalle, monto, fecha, notas, categoria, fotoBoletaId });
+      const patch = { tipo, detalle, monto, fecha, notas, categoria, fotoBoletaId };
+      if (esRendir && gasto.tipo !== 'rendir') { patch.estado = 'pendiente'; patch.fechaRendido = null; patch.fechaReembolso = null; }
+      DB.updateGasto(gasto.id, patch);
       showToast('Gasto actualizado');
     } else {
-      DB.addGasto({ tipo: g.tipo, detalle, monto, fecha, notas, categoria, fotoBoletaId });
+      DB.addGasto({ tipo, detalle, monto, fecha, notas, categoria, fotoBoletaId });
       showToast(esRendir ? 'Gasto por rendir agregado' : 'Consumo agregado');
     }
     closeSheet();
