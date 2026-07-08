@@ -1,21 +1,5 @@
 // app.js — vistas, renderizado y manejo de eventos. Sin dependencias externas.
 
-// Fix del bug clásico de iOS Safari: 100vh/100dvh no siempre refleja el alto real
-// visible (la barra de herramientas puede sumarse/restarse de forma inconsistente),
-// lo que deja huecos bajo los elementos "fixed" y desalinea los toques táctiles
-// respecto de lo que se ve en pantalla. Medimos el alto real con VisualViewport.
-function fixAppHeight() {
-  const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
-  document.documentElement.style.setProperty('--app-height', h + 'px');
-}
-fixAppHeight();
-window.addEventListener('resize', fixAppHeight);
-window.addEventListener('orientationchange', fixAppHeight);
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', fixAppHeight);
-  window.visualViewport.addEventListener('scroll', fixAppHeight);
-}
-
 let currentMonth = Utils.monthKey();
 let activeView = 'resumen';
 let gastoTipoActivo = 'consumo';

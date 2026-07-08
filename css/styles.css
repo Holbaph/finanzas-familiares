@@ -81,7 +81,6 @@ body {
   height: 100vh;
   height: 100dvh;
   height: -webkit-fill-available;
-  height: calc(var(--app-height, 100vh));
 }
 
 .topbar {
