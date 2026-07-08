@@ -929,6 +929,10 @@ function wireLock() {
   document.getElementById('lockPinInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') intentarDesbloquear();
   });
+  document.getElementById('lockPinInput').addEventListener('input', (e) => {
+    const esperado = (Lock.getConfig() || {}).length || 4;
+    if (e.target.value.length >= esperado) intentarDesbloquear();
+  });
   document.getElementById('btnLockForgot').addEventListener('click', () => {
     if (confirm('Esto borrará TODOS los datos de la app (deudas, gastos, ingresos y fotos) para quitar el PIN olvidado. ¿Continuar?')) {
       DB.resetAll();

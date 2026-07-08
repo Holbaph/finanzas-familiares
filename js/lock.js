@@ -21,7 +21,7 @@ const Lock = {
 
   async setPin(pin) {
     const hash = await this.hash(pin);
-    this.setConfig({ enabled: true, hash });
+    this.setConfig({ enabled: true, hash, length: pin.length });
   },
 
   async verify(pin) {
