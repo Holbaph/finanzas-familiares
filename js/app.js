@@ -170,13 +170,21 @@ function renderResumen() {
   const gastosTotal = pagos.reduce((s, p) => s + Number(p.gasto), 0);
   const pagadoTotal = pagos.filter(p => p.pagado).reduce((s, p) => s + Number(p.gasto), 0);
   const pendienteTotal = gastosTotal - pagadoTotal;
-  const balance = ingresosTotal - gastosTotal;
+  const saldoInicial = DB.getSaldoInicial(currentMonth);
+  const balance = saldoInicial + ingresosTotal - gastosTotal;
 
   document.getElementById('kpiIngresos').textContent = Utils.formatCLP(ingresosTotal);
   document.getElementById('kpiGastos').textContent = Utils.formatCLP(gastosTotal);
   document.getElementById('kpiBalance').textContent = Utils.formatCLP(balance);
   document.getElementById('kpiBalance').style.color = balance >= 0 ? 'var(--accent)' : 'var(--red)';
   document.getElementById('kpiPendiente').textContent = Utils.formatCLP(pendienteTotal);
+  const balanceSub = document.getElementById('kpiBalanceSub');
+  if (saldoInicial > 0) {
+    balanceSub.textContent = `Incluye ${Utils.formatCLP(saldoInicial)} de ${Utils.monthLabel(Utils.shiftMonth(currentMonth, -1))}`;
+    balanceSub.classList.remove('hidden');
+  } else {
+    balanceSub.classList.add('hidden');
+  }
 
   const pct = gastosTotal > 0 ? Math.round((pagadoTotal / gastosTotal) * 100) : 100;
   document.getElementById('progresoFill').style.width = pct + '%';
@@ -237,6 +245,63 @@ function renderResumen() {
     pendientesList.innerHTML = pendientes.map(({ pago, deuda }) => deudaCardHtml(deuda, pago)).join('');
   }
   attachDeudaCardEvents(pendientesList);
+
+  renderRecordatorioCierre();
+  renderCierreMes();
+}
+
+// ---------- Cierre de mes ----------
+function renderRecordatorioCierre() {
+  const banner = document.getElementById('recordatorioCierre');
+  const hoy = new Date();
+  if (hoy.getDate() > 5) { banner.classList.add('hidden'); return; }
+  const mesAnterior = Utils.shiftMonth(Utils.monthKey(hoy), -1);
+  if (DB.getCierre(mesAnterior)) { banner.classList.add('hidden'); return; }
+  banner.textContent = `💡 Estás entre los primeros días del mes: no olvides cerrar ${Utils.monthLabel(mesAnterior)} para trasladar tu saldo.`;
+  banner.classList.remove('hidden');
+}
+
+function renderCierreMes() {
+  const cierre = DB.getCierre(currentMonth);
+  const el = document.getElementById('cierreMesBlock');
+  const mesSiguiente = Utils.monthLabel(Utils.shiftMonth(currentMonth, 1));
+
+  if (cierre) {
+    el.innerHTML = `
+      <div class="cierre-card">
+        <span class="cierre-cerrado-badge">✓ Cerrado el ${formatFechaCorta(cierre.fechaCierre.slice(0, 10))}</span>
+        <p>Saldo trasladado a ${mesSiguiente}: <strong>${Utils.formatCLP(Math.max(0, cierre.saldoFinal))}</strong>${cierre.saldoFinal < 0 ? ' (el mes cerró en negativo, así que el siguiente parte en $0)' : ''}</p>
+        <div class="sheet-actions" style="margin-top:0">
+          <button class="btn btn-secondary full" id="btnRecalcularCierre">Recalcular cierre</button>
+          <button class="btn btn-text full" id="btnReabrirCierre">Deshacer cierre</button>
+        </div>
+      </div>`;
+    document.getElementById('btnRecalcularCierre').addEventListener('click', () => {
+      DB.cerrarMes(currentMonth);
+      renderAll();
+      showToast('Cierre recalculado');
+    });
+    document.getElementById('btnReabrirCierre').addEventListener('click', () => {
+      if (confirm(`¿Deshacer el cierre de ${Utils.monthLabel(currentMonth)}? ${mesSiguiente} volverá a partir en $0.`)) {
+        DB.reabrirMes(currentMonth);
+        renderAll();
+        showToast('Cierre deshecho');
+      }
+    });
+  } else {
+    el.innerHTML = `
+      <div class="cierre-card">
+        <p>Al cerrar ${Utils.monthLabel(currentMonth)}, lo que sobre (o $0 si no sobra) pasa como saldo inicial de ${mesSiguiente}.</p>
+        <button class="btn btn-primary full" id="btnCerrarMes">Cerrar ${Utils.monthLabel(currentMonth)}</button>
+      </div>`;
+    document.getElementById('btnCerrarMes').addEventListener('click', () => {
+      if (confirm(`¿Cerrar ${Utils.monthLabel(currentMonth)}? Podrás deshacerlo después si es necesario.`)) {
+        DB.cerrarMes(currentMonth);
+        renderAll();
+        showToast('Mes cerrado');
+      }
+    });
+  }
 }
 
 // ---------- DEUDAS ----------

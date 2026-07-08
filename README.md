@@ -32,13 +32,20 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   Las fotos se guardan comprimidas en el propio teléfono (IndexedDB) — nunca se suben a
   ningún servidor.
 - **Ingresos**: por fuente (sueldo, bono, etc.), fijos o variables, por mes.
-- **Bloqueo con PIN**: para que nadie más abra la app desde el teléfono. Se autodesbloquea al
-  escribir el último dígito. La app se vuelve a bloquear sola cada vez que se oculta/cierra.
-  Si se olvida el PIN, hay una opción en la misma pantalla de bloqueo para borrar todo y empezar
-  de nuevo (es la única forma de recuperarlo, ya que el PIN nunca se guarda en texto plano).
+- **Bloqueo con PIN (4 dígitos) y/o Face ID / Touch ID**: para que nadie más abra la app desde
+  el teléfono. El PIN se autodesbloquea al escribir el último dígito; si activas Face ID/Touch
+  ID, se intenta automáticamente al abrir. La app se vuelve a bloquear sola cada vez que se
+  oculta/cierra. Si no puedes ingresar, hay una opción en la misma pantalla de bloqueo para
+  borrar todo y empezar de nuevo (es la única forma de recuperar el acceso, ya que ni el PIN
+  ni los datos de Face ID se guardan en texto plano ni se pueden leer).
 - **Temas**: Automático, Claro, Oscuro, Rosa, Rosa Noche y Lavanda, en Ajustes → Apariencia.
 - **Navegación por mes**: al pasar a un mes nuevo, la app genera automáticamente el gasto
   esperado de cada deuda activa (igual que arrastrar las columnas de tu planilla).
+- **Cierre de mes**: desde el Resumen, botón "Cerrar [mes]" — calcula lo que sobró (ingresos
+  menos gastos, nunca negativo) y lo traslada como saldo inicial del mes siguiente. Si no sobró
+  nada, el mes siguiente simplemente parte en $0 hasta que llegue el próximo ingreso. Se puede
+  recalcular o deshacer en cualquier momento. La app recuerda cerrar el mes anterior mientras
+  estés entre los días 1 y 5 del mes en curso.
 - **Ajustes**: exportar/importar un respaldo en `.json`, y borrar todos los datos.
 
 Un dispositivo nuevo (o recién reinstalado) arranca **completamente vacío** — sin deudas,

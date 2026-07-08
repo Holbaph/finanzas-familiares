@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   meta: 'ff_meta_v1',
   empresas: 'ff_empresas_v1',
   categorias: 'ff_categorias_v1',
+  cierres: 'ff_cierres_v1',
 };
 
 // Categorías de deuda por defecto (solo se usan para inicializar el maestro editable
@@ -332,6 +333,37 @@ const DB = {
   getMeta() { return this._read(STORAGE_KEYS.meta, {}); },
   setMeta(patch) { this._write(STORAGE_KEYS.meta, { ...this.getMeta(), ...patch }); },
 
+  // ---------- Cierre de mes (arrastre de saldo al mes siguiente) ----------
+  getCierres() { return this._read(STORAGE_KEYS.cierres, []); },
+  saveCierres(list) { this._write(STORAGE_KEYS.cierres, list); },
+  getCierre(mes) { return this.getCierres().find(c => c.mes === mes) || null; },
+
+  // Saldo con el que parte un mes: lo que sobró del mes anterior (nunca negativo;
+  // si no sobró nada, o el mes anterior no está cerrado, parte en $0).
+  getSaldoInicial(mes) {
+    const cierre = this.getCierre(Utils.shiftMonth(mes, -1));
+    return cierre ? Math.max(0, cierre.saldoFinal) : 0;
+  },
+
+  // Balance real de un mes: saldo inicial + ingresos del mes - gastos del mes
+  // (mismo criterio que la tarjeta "Balance disponible" del Resumen).
+  calcularBalanceMes(mes) {
+    const ingresosTotal = this.getIngresosDeMes(mes).reduce((s, i) => s + Number(i.monto), 0);
+    const gastosTotal = this.getPagosDeMes(mes).reduce((s, p) => s + Number(p.gasto), 0);
+    return this.getSaldoInicial(mes) + ingresosTotal - gastosTotal;
+  },
+
+  cerrarMes(mes) {
+    const saldoFinal = this.calcularBalanceMes(mes);
+    const list = this.getCierres().filter(c => c.mes !== mes);
+    list.push({ mes, saldoFinal, fechaCierre: new Date().toISOString() });
+    this.saveCierres(list);
+    return saldoFinal;
+  },
+  reabrirMes(mes) {
+    this.saveCierres(this.getCierres().filter(c => c.mes !== mes));
+  },
+
   exportAll() {
     return JSON.stringify({
       version: 4,
@@ -343,6 +375,7 @@ const DB = {
       meta: this.getMeta(),
       empresas: this.getEmpresas(),
       categorias: this.getCategorias(),
+      cierres: this.getCierres(),
       pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
       biometric: (typeof Biometric !== 'undefined') ? Biometric.getConfig() : null,
     }, null, 2);
@@ -357,6 +390,7 @@ const DB = {
     if (data.meta) this.setMeta(data.meta);
     if (data.empresas) this.saveEmpresas(data.empresas);
     if (data.categorias) this.saveCategorias(data.categorias);
+    if (data.cierres) this.saveCierres(data.cierres);
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
     if (data.biometric && typeof Biometric !== 'undefined') Biometric.setConfig(data.biometric);
   },
@@ -368,6 +402,7 @@ const DB = {
     localStorage.removeItem(STORAGE_KEYS.meta);
     localStorage.removeItem(STORAGE_KEYS.empresas);
     localStorage.removeItem(STORAGE_KEYS.categorias);
+    localStorage.removeItem(STORAGE_KEYS.cierres);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
     if (typeof Biometric !== 'undefined') { Biometric.disable(); localStorage.removeItem(Biometric.KEY); }
     if (window.indexedDB) indexedDB.deleteDatabase('ff_photos_db');

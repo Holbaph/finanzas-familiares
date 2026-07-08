@@ -42,6 +42,8 @@
 
     <!-- ============ RESUMEN ============ -->
     <section id="view-resumen" class="view">
+      <div id="recordatorioCierre" class="banner-recordatorio hidden"></div>
+
       <div class="cards-grid">
         <div class="card card-income">
           <span class="card-label">Ingresos del mes</span>
@@ -54,6 +56,7 @@
         <div class="card card-balance">
           <span class="card-label">Balance disponible</span>
           <span class="card-value" id="kpiBalance">$0</span>
+          <span class="card-sub hidden" id="kpiBalanceSub"></span>
         </div>
         <div class="card card-pending">
           <span class="card-label">Pendiente por pagar</span>
@@ -86,6 +89,11 @@
           <h2>Pendientes este mes</h2>
         </div>
         <div id="pendientesList" class="deuda-list"></div>
+      </div>
+
+      <div class="section-block">
+        <h2>Cierre de mes</h2>
+        <div id="cierreMesBlock"></div>
       </div>
     </section>
 
