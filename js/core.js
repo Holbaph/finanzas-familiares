@@ -273,12 +273,14 @@ const DB = {
 
   exportAll() {
     return JSON.stringify({
-      version: 1,
+      version: 2,
       exportadoEn: new Date().toISOString(),
       deudas: this.getDeudas(),
       pagos: this.getPagos(),
       ingresos: this.getIngresos(),
       gastos: this.getGastos(),
+      meta: this.getMeta(),
+      pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
     }, null, 2);
   },
   importAll(json) {
@@ -288,6 +290,8 @@ const DB = {
     this.savePagos(data.pagos || []);
     this.saveIngresos(data.ingresos || []);
     this.saveGastos(data.gastos || []);
+    if (data.meta) this.setMeta(data.meta);
+    if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
   },
   resetAll() {
     localStorage.removeItem(STORAGE_KEYS.deudas);
@@ -295,6 +299,8 @@ const DB = {
     localStorage.removeItem(STORAGE_KEYS.ingresos);
     localStorage.removeItem(STORAGE_KEYS.gastos);
     localStorage.removeItem(STORAGE_KEYS.meta);
+    if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
+    if (window.indexedDB) indexedDB.deleteDatabase('ff_photos_db');
   },
 
   seedIfEmpty() {

@@ -1,5 +1,5 @@
 // Service worker — cachea el shell de la app para que funcione 100% sin conexión.
-const CACHE_NAME = 'finanzas-familiares-v4';
+const CACHE_NAME = 'finanzas-familiares-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -28,18 +28,17 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Red primero (para recibir actualizaciones apenas haya conexión), con la caché como
+// respaldo cuando no hay red — así el modo offline sigue garantizado.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

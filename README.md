@@ -1,17 +1,23 @@
 # Finanzas Familiares
 
-App web instalable (PWA) para llevar el control de deudas, cuotas, créditos e ingresos.
-**Funciona 100% offline y todos los datos quedan guardados solo en tu iPhone** (localStorage) —
-no hay backend, no hay nube, no hay cuentas.
+App web instalable (PWA) para llevar el control de deudas, cuotas, créditos, gastos e ingresos.
+**Funciona 100% offline y todos los datos quedan guardados solo en tu iPhone** (localStorage +
+IndexedDB para fotos) — no hay backend, no hay nube, no hay cuentas.
+
+Publicada en: **https://holbaph.github.io/finanzas-familiares/**
 
 ## Qué incluye
 
 - **Resumen del mes**: ingresos, gastos comprometidos, balance disponible, pendiente por pagar,
   progreso de pagos y desglose por categoría.
-- **Deudas**: agrupadas por categoría, con tipo "gasto recurrente" (agua, luz, suscripciones...)
-  o "crédito en cuotas" (con N° total de cuotas, cuotas pagadas y por pagar, barra de progreso).
-  Botón para marcar pagado/pendiente cada mes; al marcar una cuota como pagada, el acumulado
-  avanza solo y detecta automáticamente cuándo un crédito queda "Completa".
+- **Deudas**: agrupadas por categoría, con ícono a elección, tipo "gasto recurrente" (agua, luz,
+  suscripciones...) o "crédito en cuotas" (con N° total de cuotas, cuotas pagadas y por pagar,
+  barra de progreso). Al marcar una cuota como pagada, el acumulado avanza solo y detecta
+  automáticamente cuándo un crédito queda "Completa".
+  - **Archivar / pagadas**: cualquier deuda se puede archivar (cuenta cerrada o saldada) sin
+    perder su historial. Las activas son las únicas que aparecen en la lista principal; las
+    archivadas se ven aparte en "Archivadas / pagadas", con la fecha en que se archivaron y el
+    historial completo de pagos (con fecha de cada pago).
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
   Cada uno tiene:
@@ -23,56 +29,47 @@ no hay backend, no hay nube, no hay cuentas.
   Las fotos se guardan comprimidas en el propio teléfono (IndexedDB) — nunca se suben a
   ningún servidor.
 - **Ingresos**: por fuente (sueldo, bono, etc.), fijos o variables, por mes.
+- **Bloqueo con PIN**: para que nadie más abra la app desde el teléfono. Se autodesbloquea al
+  escribir el último dígito. La app se vuelve a bloquear sola cada vez que se oculta/cierra.
+  Si se olvida el PIN, hay una opción en la misma pantalla de bloqueo para borrar todo y empezar
+  de nuevo (es la única forma de recuperarlo, ya que el PIN nunca se guarda en texto plano).
+- **Temas**: Automático, Claro, Oscuro, Rosa, Rosa Noche y Lavanda, en Ajustes → Apariencia.
 - **Navegación por mes**: al pasar a un mes nuevo, la app genera automáticamente el gasto
   esperado de cada deuda activa (igual que arrastrar las columnas de tu planilla).
 - **Ajustes**: exportar/importar un respaldo en `.json`, y borrar todos los datos.
-- Ya viene precargada con los datos de tu planilla (Julio y Agosto 2026).
 
-> Nota sobre el respaldo: el archivo `.json` que exportas desde Ajustes guarda deudas,
-> ingresos y gastos, pero **no incluye las fotos** (viven aparte en IndexedDB para no hacer
-> gigante el archivo). Si cambias de teléfono, primero copia igual las fotos importantes o
-> revisa que sigan disponibles antes de borrar datos del dispositivo anterior.
+> Nota sobre el respaldo: el archivo `.json` que exportas desde Ajustes guarda deudas, ingresos,
+> gastos, el tema/mes elegido y la configuración del PIN — **todo excepto las fotos**, que viven
+> aparte en IndexedDB para no hacer gigante el archivo. Si cambias de teléfono, revisa que las
+> fotos importantes sigan disponibles (o guárdalas por separado) antes de borrar datos del
+> dispositivo anterior.
 
-## Cómo instalarla en tu iPhone (una sola vez)
+## ⚠️ Importante: usa siempre el ícono de la pantalla de inicio
 
-Como es una app local sin servidor propio, necesitas "servirla" una vez desde tu computador para
-que el iPhone la pueda abrir en Safari e instalarla. Después de instalada, **no necesitas volver
-a prender el computador**: el Service Worker deja todo guardado en el teléfono.
+Para evitar que el teléfono guarde tus datos en dos lugares distintos (que es lo que hace parecer
+que "se perdieron" cosas), **entra siempre por el ícono que agregaste a tu pantalla de inicio**,
+nunca por una pestaña de Safari o un buscador. Si tienes pestañas de Safari abiertas con la URL
+de la app, ciérralas — son una copia visualmente idéntica pero pueden comportarse como un
+contexto distinto en algunas versiones de iOS.
 
-1. En tu computador (Windows), abre una terminal en esta carpeta y ejecuta:
+## Cómo instalarla en tu iPhone
 
-   ```
-   python -m http.server 8765
-   ```
-
-   (Si no tienes Python, puedes usar `npx serve -l 8765` si tienes Node instalado.)
-
-2. Verifica que tu iPhone esté conectado al **mismo Wi-Fi** que el computador.
-
-3. Anota la IP de tu computador en esa red. Ahora mismo es: `10.10.11.137`
-   (puede cambiar si te reconectas a otra red; para verla de nuevo en Windows usa `ipconfig`
-   y busca "Dirección IPv4").
-
-4. En el iPhone, abre **Safari** (tiene que ser Safari, no Chrome) y entra a:
+1. Abre **Safari** (tiene que ser Safari, no Chrome) y entra a:
 
    ```
-   http://10.10.11.137:8765
+   https://holbaph.github.io/finanzas-familiares/
    ```
 
-5. Toca el botón compartir (el cuadrado con la flecha hacia arriba) y elige
+2. Toca el botón compartir (el cuadrado con la flecha hacia arriba) y elige
    **"Agregar a pantalla de inicio"**.
 
-6. Abre la app desde el ícono que quedó en tu pantalla de inicio — se abre a pantalla completa,
-   como una app nativa. A partir de ahí funciona sin conexión, incluso si apagas el computador
-   o te desconectas del Wi-Fi.
+3. Abre la app **desde ese ícono** (no desde Safari) — se abre a pantalla completa, como una
+   app nativa. A partir de ahí funciona 100% sin conexión, sin importar en qué red estés ni si
+   tu computador está prendido o no.
 
-### Alternativa sin depender del computador
-
-Si prefieres no tener que prender el PC nunca (ni siquiera la primera vez), puedes subir esta
-misma carpeta tal cual a un hosting estático gratuito (por ejemplo GitHub Pages, Netlify o
-Vercel) y abrir esa URL una vez desde el iPhone para instalarla. Es solo una forma de "entregar"
-los archivos al teléfono — la app seguirá funcionando 100% offline y sin base de datos externa
-una vez instalada, exactamente igual que con el método anterior.
+Esta publicación en GitHub Pages es permanente (no vence ni depende de tu red o computador):
+solo entrega los archivos de la app la primera vez, igual que una tienda de aplicaciones. Una
+vez instalada, la app y tus datos son enteramente tuyos y locales.
 
 ## Respaldar tus datos
 
@@ -83,11 +80,13 @@ recuperar todo con **Ajustes → Importar respaldo**.
 ## Estructura del proyecto
 
 ```
-index.html          Estructura de la app
-css/styles.css       Estilos (modo claro/oscuro, diseño tipo iOS)
-js/core.js            Modelo de datos, localStorage, datos precargados de la planilla
-js/app.js             Lógica de la interfaz y navegación
-manifest.json          Metadatos de instalación (PWA)
-sw.js                   Service Worker (cache offline)
-icons/                  Íconos de la app
+index.html         Estructura de la app
+css/styles.css      Estilos (temas claro/oscuro/rosa/lavanda, diseño tipo iOS)
+js/core.js           Modelo de datos, localStorage, datos precargados de la planilla
+js/photos.js         Almacenamiento de fotos (boletas/comprobantes) en IndexedDB
+js/lock.js           Bloqueo con PIN (hash SHA-256, nunca texto plano)
+js/app.js            Lógica de la interfaz, navegación y fix de viewport iOS
+manifest.json         Metadatos de instalación (PWA)
+sw.js                 Service Worker (cache offline)
+icons/                Íconos de la app
 ```
