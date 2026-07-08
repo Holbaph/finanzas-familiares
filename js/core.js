@@ -7,9 +7,13 @@ const STORAGE_KEYS = {
   ingresos: 'ff_ingresos_v1',
   gastos: 'ff_gastos_v1',
   meta: 'ff_meta_v1',
+  empresas: 'ff_empresas_v1',
+  categorias: 'ff_categorias_v1',
 };
 
-const CATEGORIAS = [
+// Categorías de deuda por defecto (solo se usan para inicializar el maestro editable
+// la primera vez; después el usuario puede agregar, renombrar o borrar desde Ajustes).
+const CATEGORIAS_DEFAULT = [
   'Servicios Básicos',
   'Suscripciones',
   'Ahorro',
@@ -125,6 +129,63 @@ const DB = {
   },
   reactivarDeuda(id) {
     return this.updateDeuda(id, { activa: true, fechaArchivo: null });
+  },
+
+  // ---------- Maestro de Empresas ----------
+  // Se guarda como lista propia, pero además se auto-completa con cualquier empresa
+  // que ya exista en las deudas (por si viene de un respaldo antiguo o se creó a mano).
+  getEmpresas() {
+    const stored = this._read(STORAGE_KEYS.empresas, null);
+    const enUso = [...new Set(this.getDeudas().map(d => d.empresa).filter(Boolean))];
+    if (stored === null) {
+      const inicial = enUso.sort((a, b) => a.localeCompare(b));
+      this.saveEmpresas(inicial);
+      return inicial;
+    }
+    const combinado = Array.from(new Set([...stored, ...enUso])).sort((a, b) => a.localeCompare(b));
+    if (combinado.length !== stored.length) this.saveEmpresas(combinado);
+    return combinado;
+  },
+  saveEmpresas(list) { this._write(STORAGE_KEYS.empresas, Array.from(new Set(list.filter(Boolean)))); },
+  addEmpresa(nombre) {
+    nombre = (nombre || '').trim();
+    if (!nombre) return;
+    const list = this.getEmpresas();
+    if (!list.includes(nombre)) this.saveEmpresas([...list, nombre].sort((a, b) => a.localeCompare(b)));
+  },
+  renameEmpresa(oldName, newName) {
+    newName = (newName || '').trim();
+    const list = this.getEmpresas();
+    if (!newName || oldName === newName || !list.includes(oldName)) return;
+    this.saveEmpresas([...list.filter(e => e !== oldName), newName]);
+    this.saveDeudas(this.getDeudas().map(d => d.empresa === oldName ? { ...d, empresa: newName } : d));
+  },
+  deleteEmpresa(nombre) {
+    this.saveEmpresas(this.getEmpresas().filter(e => e !== nombre));
+  },
+
+  // ---------- Maestro de Categorías (deudas) ----------
+  getCategorias() {
+    const stored = this._read(STORAGE_KEYS.categorias, null);
+    if (stored === null) { this.saveCategorias(CATEGORIAS_DEFAULT); return [...CATEGORIAS_DEFAULT]; }
+    return stored;
+  },
+  saveCategorias(list) { this._write(STORAGE_KEYS.categorias, Array.from(new Set(list.filter(Boolean)))); },
+  addCategoria(nombre) {
+    nombre = (nombre || '').trim();
+    if (!nombre) return;
+    const list = this.getCategorias();
+    if (!list.includes(nombre)) this.saveCategorias([...list, nombre]);
+  },
+  renameCategoria(oldName, newName) {
+    newName = (newName || '').trim();
+    const list = this.getCategorias();
+    if (!newName || oldName === newName || !list.includes(oldName)) return;
+    this.saveCategorias([...list.filter(c => c !== oldName), newName]);
+    this.saveDeudas(this.getDeudas().map(d => d.categoria === oldName ? { ...d, categoria: newName } : d));
+  },
+  deleteCategoria(nombre) {
+    this.saveCategorias(this.getCategorias().filter(c => c !== nombre));
   },
 
   getPagos() { return this._read(STORAGE_KEYS.pagos, []); },
@@ -273,13 +334,15 @@ const DB = {
 
   exportAll() {
     return JSON.stringify({
-      version: 2,
+      version: 3,
       exportadoEn: new Date().toISOString(),
       deudas: this.getDeudas(),
       pagos: this.getPagos(),
       ingresos: this.getIngresos(),
       gastos: this.getGastos(),
       meta: this.getMeta(),
+      empresas: this.getEmpresas(),
+      categorias: this.getCategorias(),
       pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
     }, null, 2);
   },
@@ -291,6 +354,8 @@ const DB = {
     this.saveIngresos(data.ingresos || []);
     this.saveGastos(data.gastos || []);
     if (data.meta) this.setMeta(data.meta);
+    if (data.empresas) this.saveEmpresas(data.empresas);
+    if (data.categorias) this.saveCategorias(data.categorias);
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
   },
   resetAll() {
@@ -299,91 +364,28 @@ const DB = {
     localStorage.removeItem(STORAGE_KEYS.ingresos);
     localStorage.removeItem(STORAGE_KEYS.gastos);
     localStorage.removeItem(STORAGE_KEYS.meta);
+    localStorage.removeItem(STORAGE_KEYS.empresas);
+    localStorage.removeItem(STORAGE_KEYS.categorias);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
     if (window.indexedDB) indexedDB.deleteDatabase('ff_photos_db');
   },
 
+  // Un dispositivo nuevo arranca 100% vacío (sin deudas, ingresos ni gastos de ejemplo).
+  // Solo se inicializa la lista de categorías con valores genéricos útiles para cualquiera.
+  // Si el dispositivo ya tenía datos (meta.seeded), esta función no toca nada.
   seedIfEmpty() {
     if (this.getMeta().seeded) return;
-    const D = (empresa, detalle, categoria, tipo, cuotasTotales, valorCuota, cuotasPagadasBaseJulio, icono) => ({
-      empresa, detalle, categoria, tipo, cuotasTotales, valorCuota, cuotasPagadasBaseJulio, icono,
-    });
-    // Datos tomados de la planilla original (Julio/Agosto 2026).
-    const seed = [
-      D('Essbio', 'Agua', 'Servicios Básicos', 'recurrente', null, 29490, null, '💧'),
-      D('CGE', 'Electricidad', 'Servicios Básicos', 'recurrente', null, 59800, null, '⚡'),
-      D('Movistar', 'Internet Casa', 'Servicios Básicos', 'recurrente', null, 24064, null, '📶'),
-      D('Movistar', 'Cuenta Celular Mami', 'Servicios Básicos', 'recurrente', null, 21676, null, '📱'),
-      D('Totot', 'Netflix varios CMR', 'Suscripciones', 'recurrente', null, 9000, null, '🎬'),
-      D('Totot', 'Diferencia Netflix mama', 'Suscripciones', 'recurrente', null, 2890, null, '🎬'),
-      D('Totot', 'Suscripción YouTube CMR', 'Suscripciones', 'recurrente', null, 6150, null, '📺'),
-      D('Totot', 'Ahorro Amorsito Pequeñito', 'Ahorro', 'recurrente', null, 10000, null, '🐷'),
-      D('Totot', 'Crédito Ford Aportillao', 'Compras en Cuotas', 'cuotas', 23, 25000, 15, '🚗'),
-      D('Totot', 'Diferencia Meli-Disney+', 'Suscripciones', 'recurrente', null, -4000, null, '✨'),
-      D('Totot', 'Nintendo Switch2 BCI', 'Compras en Cuotas', 'cuotas', 24, 28749, 10, '🎮'),
-      D('Totot', 'Camita Milita', 'Compras en Cuotas', 'cuotas', 6, 42094, 5, '🛏️'),
-      D('Totot', 'Rocky', 'Otros', 'recurrente', null, 10000, null, '🐶'),
-      D('Totot', 'Agua Manantial', 'Compras en Cuotas', 'cuotas', 12, 6500, 3, '🚰'),
-      D('Totot', 'Plumón Rosen', 'Compras en Cuotas', 'cuotas', 12, 2229, 3, '🖊️'),
-      D('Totot', 'Muno Mili', 'Compras en Cuotas', 'cuotas', 3, 7774, 2, '🧸'),
-      D('Totot', 'Carrito Vacaciones', 'Compras en Cuotas', 'cuotas', 3, 6334, 2, '🧳'),
-      D('Totot', 'Silla auto Milita', 'Compras en Cuotas', 'cuotas', 12, 5683, 1, '🚼'),
-      D('Totot', 'Refrigerador Mamá', 'Compras en Cuotas', 'cuotas', 10, 22300, 2, '🧊'),
-      D('Totot', 'Botas Mili BCI', 'Compras en Cuotas', 'cuotas', 3, 9215, 0, '👢'),
-      D('Totot', 'Ropita Mili Ripley', 'Compras en Cuotas', 'cuotas', 3, 7241, 2, '👕'),
-      D('Banco Estado', 'Varios Gastos Crédito', 'Créditos', 'recurrente', null, 110263, null, '🏦'),
-      D('Scotiabank', 'CAE', 'Créditos', 'cuotas', null, 27690, 35, '🎓'),
-      D('Papito', 'Crédito Auto', 'Créditos', 'cuotas', 36, 227012, 4, '🚙'),
-      D('Falabella', 'Cuenta Falabella', 'Tarjetas de Crédito', 'recurrente', null, 15000, null, '💳'),
-      D('Coopeuch', 'Préstamos + Acciones', 'Créditos', 'recurrente', null, 108500, null, '🏦'),
-      D('TAG', 'Ida a Santiago', 'Servicios Básicos', 'cuotas', 1, 301, 0, '🛣️'),
-      D('Spin', 'Créditos Varios', 'Créditos', 'recurrente', null, 15000, null, '💰'),
-      D('Crédito MercadoLibre', 'Créditos MercadoLibre', 'Créditos', 'cuotas', 2, 32445, 0, '📦'),
-      D('MercadoLibre', 'Cuenta Meli+Diney', 'Tarjetas de Crédito', 'recurrente', null, 8000, null, '💳'),
-    ];
+    this.getCategorias(); // materializa el maestro de categorías por defecto
+    this.setMeta({ seeded: true, mesActual: Utils.monthKey() });
+  },
 
-    const deudas = [];
-    const pagos = [];
-    const MES_JULIO = '2026-07';
-    const MES_AGOSTO = '2026-08';
-
-    seed.forEach(s => {
-      const deuda = {
-        id: Utils.uid(),
-        empresa: s.empresa,
-        detalle: s.detalle,
-        categoria: s.categoria,
-        icono: s.icono || '📌',
-        tipo: s.tipo,
-        cuotasTotales: s.cuotasTotales,
-        valorCuota: s.valorCuota,
-        cuotasPagadasBase: 0,
-        fechaInicio: MES_JULIO,
-        activa: true,
-        fechaArchivo: null,
-        notas: '',
-        creadoEn: new Date().toISOString(),
-      };
-      deudas.push(deuda);
-
-      if (s.tipo === 'cuotas') {
-        pagos.push({ id: Utils.uid(), deudaId: deuda.id, mes: MES_JULIO, gasto: s.valorCuota, cuotaPagadaAcumulada: s.cuotasPagadasBaseJulio, pagado: true, fechaPago: `${MES_JULIO}-05T00:00:00.000Z` });
-        const acumAgosto = deuda.cuotasTotales != null ? Math.min(s.cuotasPagadasBaseJulio + 1, deuda.cuotasTotales) : s.cuotasPagadasBaseJulio + 1;
-        pagos.push({ id: Utils.uid(), deudaId: deuda.id, mes: MES_AGOSTO, gasto: s.valorCuota, cuotaPagadaAcumulada: acumAgosto, pagado: false, fechaPago: null });
-      } else {
-        pagos.push({ id: Utils.uid(), deudaId: deuda.id, mes: MES_JULIO, gasto: s.valorCuota, cuotaPagadaAcumulada: null, pagado: true, fechaPago: `${MES_JULIO}-05T00:00:00.000Z` });
-        pagos.push({ id: Utils.uid(), deudaId: deuda.id, mes: MES_AGOSTO, gasto: s.valorCuota, cuotaPagadaAcumulada: null, pagado: false, fechaPago: null });
-      }
-    });
-
-    this.saveDeudas(deudas);
-    this.savePagos(pagos);
-    this.saveIngresos([
-      { id: Utils.uid(), fuente: 'Sueldo Papá', monto: 900000, mes: MES_JULIO, tipo: 'fijo', notas: '' },
-      { id: Utils.uid(), fuente: 'Sueldo Mamá', monto: 550000, mes: MES_JULIO, tipo: 'fijo', notas: '' },
-      { id: Utils.uid(), fuente: 'Sueldo Papá', monto: 900000, mes: MES_AGOSTO, tipo: 'fijo', notas: '' },
-      { id: Utils.uid(), fuente: 'Sueldo Mamá', monto: 550000, mes: MES_AGOSTO, tipo: 'fijo', notas: '' },
-    ]);
-    this.setMeta({ seeded: true, mesActual: MES_JULIO });
+  // Migraciones puntuales sobre datos ya existentes en el dispositivo (no afectan un
+  // dispositivo nuevo, que no tendrá nada que migrar).
+  migrar() {
+    const meta = this.getMeta();
+    if (!meta.migracion_totol_v1) {
+      this.renameEmpresa('Totot', 'Totol');
+      this.setMeta({ migracion_totol_v1: true });
+    }
   },
 };

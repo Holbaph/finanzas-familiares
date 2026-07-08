@@ -18,6 +18,9 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
     perder su historial. Las activas son las únicas que aparecen en la lista principal; las
     archivadas se ven aparte en "Archivadas / pagadas", con la fecha en que se archivaron y el
     historial completo de pagos (con fecha de cada pago).
+  - **Empresas y categorías como maestros**: se eligen desde una lista (no hay que escribirlas
+    de nuevo cada vez) y se administran desde Ajustes → Empresas / Categorías de deudas, donde
+    se pueden agregar, renombrar (renombra también todas las deudas que ya la usaban) o quitar.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
   Cada uno tiene:
@@ -37,6 +40,9 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
 - **Navegación por mes**: al pasar a un mes nuevo, la app genera automáticamente el gasto
   esperado de cada deuda activa (igual que arrastrar las columnas de tu planilla).
 - **Ajustes**: exportar/importar un respaldo en `.json`, y borrar todos los datos.
+
+Un dispositivo nuevo (o recién reinstalado) arranca **completamente vacío** — sin deudas,
+ingresos ni gastos de ejemplo — listo para que cargues lo tuyo o importes un respaldo.
 
 > Nota sobre el respaldo: el archivo `.json` que exportas desde Ajustes guarda deudas, ingresos,
 > gastos, el tema/mes elegido y la configuración del PIN — **todo excepto las fotos**, que viven

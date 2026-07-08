@@ -678,3 +678,18 @@ html.locked-boot #app { visibility: hidden; }
 }
 .archivada-info { flex: 1; min-width: 0; }
 .archivada-fecha { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ---------- Maestros (Empresas / Categorías) ---------- */
+.maestro-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.maestro-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--bg-elevated);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+}
+.maestro-row span { font-size: 14.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.maestro-actions { display: flex; gap: 6px; flex-shrink: 0; }

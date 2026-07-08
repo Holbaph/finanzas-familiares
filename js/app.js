@@ -45,6 +45,7 @@ function init() {
   if (appStarted) { renderAll(); return; }
   appStarted = true;
   DB.seedIfEmpty();
+  DB.migrar();
   currentMonth = DB.getMeta().mesActual || Utils.monthKey();
   DB.ensureMes(currentMonth);
   populateCategoriaFilter();
@@ -227,14 +228,22 @@ function renderResumen() {
 // ---------- DEUDAS ----------
 function populateCategoriaFilter() {
   const sel = document.getElementById('filtroCategoria');
-  CATEGORIAS.forEach(c => {
+  sel.addEventListener('change', renderDeudas);
+  document.getElementById('btnVerArchivadas').addEventListener('click', openArchivadasSheet);
+  refreshCategoriaFilterOptions();
+}
+
+function refreshCategoriaFilterOptions() {
+  const sel = document.getElementById('filtroCategoria');
+  const valorActual = sel.value;
+  sel.innerHTML = '<option value="">Todas las categorías</option>';
+  DB.getCategorias().forEach(c => {
     const opt = document.createElement('option');
     opt.value = c;
     opt.textContent = c;
     sel.appendChild(opt);
   });
-  sel.addEventListener('change', renderDeudas);
-  document.getElementById('btnVerArchivadas').addEventListener('click', openArchivadasSheet);
+  if ([...sel.options].some(o => o.value === valorActual)) sel.value = valorActual;
 }
 
 function renderDeudas() {
@@ -324,7 +333,10 @@ function attachDeudaCardEvents(container) {
 
 function openDeudaForm(deuda) {
   const editing = !!deuda;
-  const d = deuda || { empresa: '', detalle: '', categoria: CATEGORIAS[0], icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '' };
+  const d = deuda || { empresa: '', detalle: '', categoria: DB.getCategorias()[0], icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '' };
+  const empresas = DB.getEmpresas();
+  const categorias = DB.getCategorias();
+  const empresaEsNueva = !d.empresa || !empresas.includes(d.empresa);
 
   openSheet(`
     <h2>${editing ? 'Editar deuda' : 'Nueva deuda'}</h2>
@@ -336,7 +348,11 @@ function openDeudaForm(deuda) {
     </div>
     <div class="form-group">
       <label>Empresa / Entidad</label>
-      <input type="text" id="f-empresa" value="${escapeAttr(d.empresa)}" placeholder="Ej: CGE, Falabella...">
+      <select id="f-empresa">
+        ${empresas.map(e => `<option value="${escapeAttr(e)}" ${e === d.empresa ? 'selected' : ''}>${escapeHtml(e)}</option>`).join('')}
+        <option value="__nueva__" ${empresaEsNueva ? 'selected' : ''}>+ Nueva empresa…</option>
+      </select>
+      <input type="text" id="f-empresa-nueva" value="${empresaEsNueva ? escapeAttr(d.empresa) : ''}" placeholder="Nombre de la nueva empresa" style="margin-top:8px; ${empresaEsNueva ? '' : 'display:none'}">
     </div>
     <div class="form-group">
       <label>Detalle</label>
@@ -345,8 +361,10 @@ function openDeudaForm(deuda) {
     <div class="form-group">
       <label>Categoría</label>
       <select id="f-categoria">
-        ${CATEGORIAS.map(c => `<option value="${c}" ${c === d.categoria ? 'selected' : ''}>${c}</option>`).join('')}
+        ${categorias.map(c => `<option value="${escapeAttr(c)}" ${c === d.categoria ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+        <option value="__nueva__">+ Nueva categoría…</option>
       </select>
+      <input type="text" id="f-categoria-nueva" value="" placeholder="Nombre de la nueva categoría" style="margin-top:8px; display:none">
     </div>
     <div class="form-group">
       <label>Tipo</label>
@@ -400,17 +418,30 @@ function openDeudaForm(deuda) {
     });
   });
 
+  document.getElementById('f-empresa').addEventListener('change', (e) => {
+    document.getElementById('f-empresa-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
+  });
+  document.getElementById('f-categoria').addEventListener('change', (e) => {
+    document.getElementById('f-categoria-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
+  });
+
   document.getElementById('btnCancelarDeuda').addEventListener('click', closeSheet);
   document.getElementById('btnGuardarDeuda').addEventListener('click', () => {
-    const empresa = document.getElementById('f-empresa').value.trim();
+    const empresaSel = document.getElementById('f-empresa').value;
+    const empresa = empresaSel === '__nueva__' ? document.getElementById('f-empresa-nueva').value.trim() : empresaSel;
     const detalle = document.getElementById('f-detalle').value.trim();
     if (!empresa || !detalle) { showToast('Completa empresa y detalle'); return; }
     const tipo = segmented.querySelector('button.active').dataset.tipo;
     const valorCuota = Utils.parseCLP(document.getElementById('f-valorCuota').value);
     const cuotasTotales = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasTotales').value, 10) || null) : null;
-    const categoria = document.getElementById('f-categoria').value;
+    const categoriaSel = document.getElementById('f-categoria').value;
+    const categoria = categoriaSel === '__nueva__' ? document.getElementById('f-categoria-nueva').value.trim() : categoriaSel;
+    if (!categoria) { showToast('Escribe el nombre de la nueva categoría'); return; }
     const notas = document.getElementById('f-notas').value.trim();
     const icono = iconoSeleccionado;
+
+    DB.addEmpresa(empresa);
+    DB.addCategoria(categoria);
 
     if (editing) {
       DB.updateDeuda(deuda.id, { empresa, detalle, categoria, icono, tipo, cuotasTotales, valorCuota, notas });
@@ -426,6 +457,8 @@ function openDeudaForm(deuda) {
       showToast('Deuda agregada');
     }
     closeSheet();
+    refreshCategoriaFilterOptions();
+    renderMaestros();
     renderAll();
   });
 }
@@ -952,6 +985,123 @@ function wireAjustes() {
   });
 
   wireSeguridad();
+  wireMaestros();
+}
+
+// ---------- Maestros (Empresas / Categorías) ----------
+function openTextPrompt(titulo, valorInicial, onGuardar) {
+  openSheet(`
+    <h2>${escapeHtml(titulo)}</h2>
+    <div class="form-group">
+      <input type="text" id="f-prompt-valor" value="${escapeAttr(valorInicial || '')}" placeholder="Nombre">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-primary full" id="btnPromptGuardar">Guardar</button>
+      <button class="btn btn-secondary full" id="btnPromptCancelar">Cancelar</button>
+    </div>
+  `);
+  const input = document.getElementById('f-prompt-valor');
+  setTimeout(() => input.focus(), 50);
+  document.getElementById('btnPromptCancelar').addEventListener('click', closeSheet);
+  const guardar = () => {
+    const val = input.value.trim();
+    if (!val) { showToast('Escribe un nombre'); return; }
+    onGuardar(val);
+    closeSheet();
+  };
+  document.getElementById('btnPromptGuardar').addEventListener('click', guardar);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') guardar(); });
+}
+
+function renderMaestros() {
+  const empresasEl = document.getElementById('empresasList');
+  const empresas = DB.getEmpresas();
+  empresasEl.innerHTML = empresas.length ? empresas.map(e => `
+    <div class="maestro-row">
+      <span>${escapeHtml(e)}</span>
+      <div class="maestro-actions">
+        <button class="icon-action" data-edit-empresa="${escapeAttr(e)}">✎</button>
+        <button class="icon-action" data-del-empresa="${escapeAttr(e)}">✕</button>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state">Aún no tienes empresas registradas.</div>';
+
+  empresasEl.querySelectorAll('[data-edit-empresa]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.editEmpresa;
+      openTextPrompt('Renombrar empresa', nombre, (nuevo) => {
+        DB.renameEmpresa(nombre, nuevo);
+        renderMaestros();
+        renderAll();
+        showToast('Empresa actualizada');
+      });
+    });
+  });
+  empresasEl.querySelectorAll('[data-del-empresa]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.delEmpresa;
+      if (confirm(`¿Quitar "${nombre}" de la lista de empresas? Las deudas que ya la usan no se modifican.`)) {
+        DB.deleteEmpresa(nombre);
+        renderMaestros();
+        showToast('Empresa quitada de la lista');
+      }
+    });
+  });
+
+  const categoriasEl = document.getElementById('categoriasList');
+  const categorias = DB.getCategorias();
+  categoriasEl.innerHTML = categorias.length ? categorias.map(c => `
+    <div class="maestro-row">
+      <span>${escapeHtml(c)}</span>
+      <div class="maestro-actions">
+        <button class="icon-action" data-edit-categoria="${escapeAttr(c)}">✎</button>
+        <button class="icon-action" data-del-categoria="${escapeAttr(c)}">✕</button>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state">Sin categorías.</div>';
+
+  categoriasEl.querySelectorAll('[data-edit-categoria]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.editCategoria;
+      openTextPrompt('Renombrar categoría', nombre, (nuevo) => {
+        DB.renameCategoria(nombre, nuevo);
+        renderMaestros();
+        refreshCategoriaFilterOptions();
+        renderAll();
+        showToast('Categoría actualizada');
+      });
+    });
+  });
+  categoriasEl.querySelectorAll('[data-del-categoria]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.delCategoria;
+      if (confirm(`¿Quitar "${nombre}" de la lista de categorías?`)) {
+        DB.deleteCategoria(nombre);
+        renderMaestros();
+        refreshCategoriaFilterOptions();
+        showToast('Categoría quitada de la lista');
+      }
+    });
+  });
+}
+
+function wireMaestros() {
+  document.getElementById('btnAgregarEmpresa').addEventListener('click', () => {
+    openTextPrompt('Nueva empresa', '', (nombre) => {
+      DB.addEmpresa(nombre);
+      renderMaestros();
+      showToast('Empresa agregada');
+    });
+  });
+  document.getElementById('btnAgregarCategoria').addEventListener('click', () => {
+    openTextPrompt('Nueva categoría', '', (nombre) => {
+      DB.addCategoria(nombre);
+      renderMaestros();
+      refreshCategoriaFilterOptions();
+      showToast('Categoría agregada');
+    });
+  });
+  renderMaestros();
 }
 
 // ---------- Seguridad (PIN) ----------
