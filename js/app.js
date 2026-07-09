@@ -254,12 +254,14 @@ function renderCierreMes() {
     el.innerHTML = `
       <div class="cierre-card">
         <span class="cierre-cerrado-badge">✓ Cerrado el ${formatFechaCorta(cierre.fechaCierre.slice(0, 10))}</span>
-        <p>Saldo trasladado a ${mesSiguiente}: <strong>${Utils.formatCLP(Math.max(0, cierre.saldoFinal))}</strong>${cierre.saldoFinal < 0 ? ' (el mes cerró en negativo, así que el siguiente parte en $0)' : ''}</p>
+        <p>Saldo trasladado a ${mesSiguiente}: <strong>${Utils.formatCLP(Math.max(0, cierre.saldoFinal))}</strong>${cierre.saldoFinal < 0 ? ' (el mes cerró en negativo, así que el siguiente parte en $0)' : ''}${cierre.ajustado ? ' · ajustado a mano' : ''}</p>
         <div class="sheet-actions" style="margin-top:0">
-          <button class="btn btn-secondary full" id="btnRecalcularCierre">Recalcular cierre</button>
+          <button class="btn btn-secondary full" id="btnAjustarSaldo">✎ Ajustar monto (si no registré todo)</button>
+          <button class="btn btn-secondary full" id="btnRecalcularCierre">Recalcular desde los datos de la app</button>
           <button class="btn btn-text full" id="btnReabrirCierre">Deshacer cierre</button>
         </div>
       </div>`;
+    document.getElementById('btnAjustarSaldo').addEventListener('click', () => abrirAjusteSaldoCierre(currentMonth));
     document.getElementById('btnRecalcularCierre').addEventListener('click', () => {
       DB.cerrarMes(currentMonth);
       renderAll();
@@ -286,6 +288,31 @@ function renderCierreMes() {
       }
     });
   }
+}
+
+function abrirAjusteSaldoCierre(mes) {
+  const cierre = DB.getCierre(mes);
+  if (!cierre) return;
+  openSheet(`
+    <h2>Ajustar saldo trasladado</h2>
+    <p class="muted" style="margin-top:-10px">Usa esto si no alcanzaste a registrar todos los gastos o ingresos de ${Utils.monthLabel(mes)}, y el monto calculado no es el real.</p>
+    <div class="form-group">
+      <label>Saldo real que te quedó</label>
+      <input type="number" id="f-saldo-ajustado" value="${Math.max(0, cierre.saldoFinal)}" placeholder="Ej: 350000">
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-primary full" id="btnGuardarAjusteSaldo">Guardar</button>
+      <button class="btn btn-secondary full" id="btnCancelarAjusteSaldo">Cancelar</button>
+    </div>
+  `);
+  document.getElementById('btnCancelarAjusteSaldo').addEventListener('click', closeSheet);
+  document.getElementById('btnGuardarAjusteSaldo').addEventListener('click', () => {
+    const nuevo = Utils.parseCLP(document.getElementById('f-saldo-ajustado').value);
+    DB.ajustarCierre(mes, nuevo);
+    closeSheet();
+    renderAll();
+    showToast('Saldo ajustado');
+  });
 }
 
 // ---------- DEUDAS ----------

@@ -356,12 +356,20 @@ const DB = {
   cerrarMes(mes) {
     const saldoFinal = this.calcularBalanceMes(mes);
     const list = this.getCierres().filter(c => c.mes !== mes);
-    list.push({ mes, saldoFinal, fechaCierre: new Date().toISOString() });
+    list.push({ mes, saldoFinal, fechaCierre: new Date().toISOString(), ajustado: false });
     this.saveCierres(list);
     return saldoFinal;
   },
   reabrirMes(mes) {
     this.saveCierres(this.getCierres().filter(c => c.mes !== mes));
+  },
+  // Permite corregir a mano el saldo trasladado, por si quedó algo sin registrar en el mes.
+  ajustarCierre(mes, nuevoSaldo) {
+    const cierre = this.getCierre(mes);
+    if (!cierre) return null;
+    const actualizado = { ...cierre, saldoFinal: Math.max(0, Number(nuevoSaldo) || 0), ajustado: true, fechaAjuste: new Date().toISOString() };
+    this.saveCierres([...this.getCierres().filter(c => c.mes !== mes), actualizado]);
+    return actualizado;
   },
 
   exportAll() {
