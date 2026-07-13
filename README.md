@@ -22,6 +22,8 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   - **Empresas como maestro**: se eligen desde una lista (no hay que escribirlas de nuevo cada
     vez) y se administran desde Ajustes → Empresas, donde se pueden agregar, renombrar (renombra
     también todas las deudas que ya la usaban) o quitar.
+  - Al filtrar Deudas por una empresa, arriba de la lista aparece cuántas deudas tienes con ella
+    y el total a pagar ese mes entre todas.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
   Cada uno tiene:

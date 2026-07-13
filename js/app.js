@@ -398,6 +398,21 @@ function renderDeudas() {
   const container = document.getElementById('deudasList');
   document.getElementById('archivadasCount').textContent = `(${DB.getDeudasArchivadas().length})`;
 
+  const resumenEl = document.getElementById('resumenFiltroEmpresa');
+  if (filtro && deudas.length > 0) {
+    const total = deudas.reduce((s, d) => {
+      const pago = DB.getPago(d.id, currentMonth);
+      return s + Number(pago ? pago.gasto : d.valorCuota);
+    }, 0);
+    resumenEl.innerHTML = `
+      <span class="rfe-label">${deudas.length} deuda${deudas.length === 1 ? '' : 's'} con ${escapeHtml(filtro)} · ${Utils.monthLabel(currentMonth)}</span>
+      <span class="rfe-total">${Utils.formatCLP(total)}</span>
+    `;
+    resumenEl.classList.remove('hidden');
+  } else {
+    resumenEl.classList.add('hidden');
+  }
+
   if (deudas.length === 0) {
     container.innerHTML = '<div class="empty-state">No hay deudas activas en esta empresa.</div>';
     return;
