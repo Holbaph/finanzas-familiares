@@ -1105,16 +1105,30 @@ function openGastoDetail(id) {
 }
 
 // ---------- AJUSTES ----------
+function renderUltimoRespaldo() {
+  const info = DB.getMeta().ultimoRespaldo;
+  const el = document.getElementById('ultimoRespaldoInfo');
+  if (!info) { el.textContent = 'Aún no has exportado ni importado ningún respaldo.'; return; }
+  const fecha = new Date(info.fecha);
+  const fechaTexto = `${formatFechaCorta(fecha.toISOString().slice(0, 10))} ${fecha.getHours().toString().padStart(2, '0')}:${fecha.getMinutes().toString().padStart(2, '0')}`;
+  el.textContent = `Último ${info.tipo}: ${info.nombre} — ${fechaTexto}`;
+}
+
 function wireAjustes() {
+  renderUltimoRespaldo();
+
   document.getElementById('btnExport').addEventListener('click', () => {
+    const nombre = `finanzas-respaldo-${Utils.monthKey()}.json`;
     const data = DB.exportAll();
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `finanzas-respaldo-${Utils.monthKey()}.json`;
+    a.download = nombre;
     a.click();
     URL.revokeObjectURL(url);
+    DB.setMeta({ ultimoRespaldo: { tipo: 'exportado', nombre, fecha: new Date().toISOString() } });
+    renderUltimoRespaldo();
   });
 
   document.getElementById('inputImport').addEventListener('change', (e) => {
@@ -1124,7 +1138,9 @@ function wireAjustes() {
     reader.onload = () => {
       try {
         DB.importAll(reader.result);
+        DB.setMeta({ ultimoRespaldo: { tipo: 'importado', nombre: file.name, fecha: new Date().toISOString() } });
         showToast('Respaldo importado');
+        renderUltimoRespaldo();
         renderAll();
       } catch (err) {
         showToast('Archivo inválido');
@@ -1141,6 +1157,7 @@ function wireAjustes() {
       currentMonth = DB.getMeta().mesActual || Utils.monthKey();
       renderAll();
       renderLockUi();
+      renderUltimoRespaldo();
       showToast('Datos reiniciados');
     }
   });

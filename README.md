@@ -92,7 +92,14 @@ vez instalada, la app y tus datos son enteramente tuyos y locales.
 
 Ve a **Ajustes → Exportar respaldo** de vez en cuando y guarda el archivo `.json` (por ejemplo,
 enviándotelo por AirDrop o correo). Si alguna vez cambias de teléfono o borras la app, puedes
-recuperar todo con **Ajustes → Importar respaldo**.
+recuperar todo con **Ajustes → Importar respaldo**. Ajustes muestra siempre el nombre y la fecha
+del último respaldo exportado o importado, para tener esa referencia a mano.
+
+> Nota: la app **no puede** recordar la ubicación de ese archivo en tu teléfono ni volver a leerlo
+> sola al abrirse — Safari no permite que ninguna página web acceda al sistema de archivos por su
+> cuenta, por seguridad. Esto no hace falta de todos modos: la app ya guarda todos tus datos por
+> sí sola en el propio dispositivo (no necesitas importar el `.json` cada vez que la abres); el
+> archivo es solo para respaldo o para pasar los datos a otro teléfono.
 
 ## Estructura del proyecto
 
