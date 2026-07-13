@@ -51,6 +51,7 @@ function init() {
   wireMonthSwitch();
   wireFab();
   wireSheetOverlay();
+  wireLightbox();
   wireAjustes();
   wireGastoTipoSegmented();
   wireThemeGrid();
@@ -136,6 +137,30 @@ function closeSheet() {
   document.getElementById('sheetOverlay').classList.add('hidden');
   document.getElementById('sheetContent').innerHTML = '';
 }
+// ---------- Visor de imágenes ampliadas ----------
+function wireLightbox() {
+  document.getElementById('btnCerrarLightbox').addEventListener('click', closeLightbox);
+  document.getElementById('imageLightbox').addEventListener('click', (e) => {
+    if (e.target.id === 'imageLightbox') closeLightbox();
+  });
+}
+function openLightbox(url) {
+  if (!url) return;
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('imageLightbox').classList.add('visible');
+}
+function closeLightbox() {
+  document.getElementById('imageLightbox').classList.remove('visible');
+  document.getElementById('lightboxImg').src = '';
+}
+function hacerAmpliable(img) {
+  img.classList.add('ampliable');
+  img.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openLightbox(img.src);
+  });
+}
+
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -174,12 +199,12 @@ function renderResumen() {
   document.getElementById('progresoFill').style.width = pct + '%';
   document.getElementById('progresoTexto').textContent = `${pct}% · ${Utils.formatCLP(pagadoTotal)} de ${Utils.formatCLP(gastosTotal)}`;
 
-  // Por categoría
+  // Por empresa
   const porCategoria = {};
   pagos.forEach(p => {
     const deuda = deudas.find(d => d.id === p.deudaId);
     if (!deuda) return;
-    const cat = deuda.categoria || 'Otros';
+    const cat = deuda.empresa || 'Otros';
     if (!porCategoria[cat]) porCategoria[cat] = { total: 0, pagado: 0 };
     porCategoria[cat].total += Number(p.gasto);
     if (p.pagado) porCategoria[cat].pagado += Number(p.gasto);
@@ -326,11 +351,11 @@ function populateCategoriaFilter() {
 function refreshCategoriaFilterOptions() {
   const sel = document.getElementById('filtroCategoria');
   const valorActual = sel.value;
-  sel.innerHTML = '<option value="">Todas las categorías</option>';
-  DB.getCategorias().forEach(c => {
+  sel.innerHTML = '<option value="">Todas las empresas</option>';
+  DB.getEmpresas().forEach(e => {
     const opt = document.createElement('option');
-    opt.value = c;
-    opt.textContent = c;
+    opt.value = e;
+    opt.textContent = e;
     sel.appendChild(opt);
   });
   if ([...sel.options].some(o => o.value === valorActual)) sel.value = valorActual;
@@ -338,18 +363,18 @@ function refreshCategoriaFilterOptions() {
 
 function renderDeudas() {
   const filtro = document.getElementById('filtroCategoria').value;
-  const deudas = DB.getDeudas().filter(d => d.activa && (!filtro || d.categoria === filtro));
+  const deudas = DB.getDeudas().filter(d => d.activa && (!filtro || d.empresa === filtro));
   const container = document.getElementById('deudasList');
   document.getElementById('archivadasCount').textContent = `(${DB.getDeudasArchivadas().length})`;
 
   if (deudas.length === 0) {
-    container.innerHTML = '<div class="empty-state">No hay deudas activas en esta categoría.</div>';
+    container.innerHTML = '<div class="empty-state">No hay deudas activas en esta empresa.</div>';
     return;
   }
 
   const grupos = {};
   deudas.forEach(d => {
-    const cat = d.categoria || 'Otros';
+    const cat = d.empresa || 'Otros';
     if (!grupos[cat]) grupos[cat] = [];
     grupos[cat].push(d);
   });
@@ -423,9 +448,8 @@ function attachDeudaCardEvents(container) {
 
 function openDeudaForm(deuda) {
   const editing = !!deuda;
-  const d = deuda || { empresa: '', detalle: '', categoria: DB.getCategorias()[0], icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '' };
+  const d = deuda || { empresa: '', detalle: '', icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '' };
   const empresas = DB.getEmpresas();
-  const categorias = DB.getCategorias();
   const empresaEsNueva = !d.empresa || !empresas.includes(d.empresa);
 
   openSheet(`
@@ -437,7 +461,7 @@ function openDeudaForm(deuda) {
       </div>
     </div>
     <div class="form-group">
-      <label>Empresa / Entidad</label>
+      <label>Empresa / Categoría</label>
       <select id="f-empresa">
         ${empresas.map(e => `<option value="${escapeAttr(e)}" ${e === d.empresa ? 'selected' : ''}>${escapeHtml(e)}</option>`).join('')}
         <option value="__nueva__" ${empresaEsNueva ? 'selected' : ''}>+ Nueva empresa…</option>
@@ -447,14 +471,6 @@ function openDeudaForm(deuda) {
     <div class="form-group">
       <label>Detalle</label>
       <input type="text" id="f-detalle" value="${escapeAttr(d.detalle)}" placeholder="Ej: Electricidad, Crédito auto...">
-    </div>
-    <div class="form-group">
-      <label>Categoría</label>
-      <select id="f-categoria">
-        ${categorias.map(c => `<option value="${escapeAttr(c)}" ${c === d.categoria ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-        <option value="__nueva__">+ Nueva categoría…</option>
-      </select>
-      <input type="text" id="f-categoria-nueva" value="" placeholder="Nombre de la nueva categoría" style="margin-top:8px; display:none">
     </div>
     <div class="form-group">
       <label>Tipo</label>
@@ -511,9 +527,6 @@ function openDeudaForm(deuda) {
   document.getElementById('f-empresa').addEventListener('change', (e) => {
     document.getElementById('f-empresa-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
   });
-  document.getElementById('f-categoria').addEventListener('change', (e) => {
-    document.getElementById('f-categoria-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
-  });
 
   document.getElementById('btnCancelarDeuda').addEventListener('click', closeSheet);
   document.getElementById('btnGuardarDeuda').addEventListener('click', () => {
@@ -524,17 +537,13 @@ function openDeudaForm(deuda) {
     const tipo = segmented.querySelector('button.active').dataset.tipo;
     const valorCuota = Utils.parseCLP(document.getElementById('f-valorCuota').value);
     const cuotasTotales = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasTotales').value, 10) || null) : null;
-    const categoriaSel = document.getElementById('f-categoria').value;
-    const categoria = categoriaSel === '__nueva__' ? document.getElementById('f-categoria-nueva').value.trim() : categoriaSel;
-    if (!categoria) { showToast('Escribe el nombre de la nueva categoría'); return; }
     const notas = document.getElementById('f-notas').value.trim();
     const icono = iconoSeleccionado;
 
     DB.addEmpresa(empresa);
-    DB.addCategoria(categoria);
 
     if (editing) {
-      DB.updateDeuda(deuda.id, { empresa, detalle, categoria, icono, tipo, cuotasTotales, valorCuota, notas });
+      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas });
       const pagoActual = DB.getPago(deuda.id, currentMonth);
       if (pagoActual && !pagoActual.pagado) {
         DB.upsertPago({ ...pagoActual, gasto: valorCuota });
@@ -542,7 +551,7 @@ function openDeudaForm(deuda) {
       showToast('Deuda actualizada');
     } else {
       const cuotasPagadasBase = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasPagadasBase').value, 10) || 0) : 0;
-      const nueva = DB.addDeuda({ empresa, detalle, categoria, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio: currentMonth });
+      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio: currentMonth });
       DB.ensureMes(currentMonth);
       showToast('Deuda agregada');
     }
@@ -560,7 +569,7 @@ function openDeudaDetail(id) {
 
   openSheet(`
     <h2>${escapeHtml(deuda.icono || '📌')} ${escapeHtml(deuda.detalle)}</h2>
-    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)} · ${escapeHtml(deuda.categoria)}</p>
+    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}</p>
     ${!deuda.activa ? `<div class="form-group"><span class="badge-estado reembolsado">Archivada el ${formatFechaCorta(deuda.fechaArchivo.slice(0, 10))}</span></div>` : ''}
     <div class="sheet-actions">
       <button class="btn btn-secondary full" id="btnEditarDeuda">Editar datos</button>
@@ -804,7 +813,9 @@ function attachGastoCardEvents(container) {
       Photos.getURL(g.fotoBoletaId).then(url => {
         if (!url) return;
         const el = card.querySelector(`#thumb-${g.id}`);
-        if (el) el.outerHTML = `<img id="thumb-${g.id}" class="gasto-thumb" src="${url}">`;
+        if (!el) return;
+        el.outerHTML = `<img id="thumb-${g.id}" class="gasto-thumb" src="${url}">`;
+        hacerAmpliable(card.querySelector(`#thumb-${g.id}`));
       });
     }
   });
@@ -876,7 +887,9 @@ function openGastoForm(gasto, tipoDefault) {
   let fotoBoletaId = g.fotoBoletaId || null;
   if (fotoBoletaId) {
     Photos.getURL(fotoBoletaId).then(url => {
-      if (url) document.getElementById('previewBoleta').innerHTML = `<img class="photo-preview" src="${url}">`;
+      if (!url) return;
+      document.getElementById('previewBoleta').innerHTML = `<img class="photo-preview" src="${url}">`;
+      hacerAmpliable(document.getElementById('previewBoleta').querySelector('img'));
     });
   }
 
@@ -886,6 +899,7 @@ function openGastoForm(gasto, tipoDefault) {
     if (!file) return;
     const localUrl = URL.createObjectURL(file);
     document.getElementById('previewBoleta').innerHTML = `<img class="photo-preview" src="${localUrl}">`;
+    hacerAmpliable(document.getElementById('previewBoleta').querySelector('img'));
     const id = fotoBoletaId || Utils.uid();
     await Photos.save(id, file);
     fotoBoletaId = id;
@@ -960,12 +974,16 @@ function openGastoDetail(id) {
 
   if (gasto.fotoBoletaId) {
     Photos.getURL(gasto.fotoBoletaId).then(url => {
-      if (url) document.getElementById('previewBoletaDet').innerHTML = `<img class="photo-preview" src="${url}">`;
+      if (!url) return;
+      document.getElementById('previewBoletaDet').innerHTML = `<img class="photo-preview" src="${url}">`;
+      hacerAmpliable(document.getElementById('previewBoletaDet').querySelector('img'));
     });
   }
   if (gasto.fotoComprobanteId) {
     Photos.getURL(gasto.fotoComprobanteId).then(url => {
-      if (url) document.getElementById('previewComprobanteDet').innerHTML = `<img class="photo-preview" src="${url}">`;
+      if (!url) return;
+      document.getElementById('previewComprobanteDet').innerHTML = `<img class="photo-preview" src="${url}">`;
+      hacerAmpliable(document.getElementById('previewComprobanteDet').querySelector('img'));
     });
   }
 
@@ -974,6 +992,7 @@ function openGastoDetail(id) {
     const file = e.target.files[0];
     if (!file) return;
     document.getElementById('previewBoletaDet').innerHTML = `<img class="photo-preview" src="${URL.createObjectURL(file)}">`;
+    hacerAmpliable(document.getElementById('previewBoletaDet').querySelector('img'));
     const id = gasto.fotoBoletaId || Utils.uid();
     await Photos.save(id, file);
     DB.updateGasto(gasto.id, { fotoBoletaId: id });
@@ -985,6 +1004,7 @@ function openGastoDetail(id) {
     const file = e.target.files[0];
     if (!file) return;
     document.getElementById('previewComprobanteDet').innerHTML = `<img class="photo-preview" src="${URL.createObjectURL(file)}">`;
+    hacerAmpliable(document.getElementById('previewComprobanteDet').querySelector('img'));
     const id = gasto.fotoComprobanteId || Utils.uid();
     await Photos.save(id, file);
     DB.updateGasto(gasto.id, { fotoComprobanteId: id });
@@ -1122,6 +1142,7 @@ function renderMaestros() {
       openTextPrompt('Renombrar empresa', nombre, (nuevo) => {
         DB.renameEmpresa(nombre, nuevo);
         renderMaestros();
+        refreshCategoriaFilterOptions();
         renderAll();
         showToast('Empresa actualizada');
       });
@@ -1133,43 +1154,8 @@ function renderMaestros() {
       if (confirm(`¿Quitar "${nombre}" de la lista de empresas? Las deudas que ya la usan no se modifican.`)) {
         DB.deleteEmpresa(nombre);
         renderMaestros();
+        refreshCategoriaFilterOptions();
         showToast('Empresa quitada de la lista');
-      }
-    });
-  });
-
-  const categoriasEl = document.getElementById('categoriasList');
-  const categorias = DB.getCategorias();
-  categoriasEl.innerHTML = categorias.length ? categorias.map(c => `
-    <div class="maestro-row">
-      <span>${escapeHtml(c)}</span>
-      <div class="maestro-actions">
-        <button class="icon-action" data-edit-categoria="${escapeAttr(c)}">✎</button>
-        <button class="icon-action" data-del-categoria="${escapeAttr(c)}">✕</button>
-      </div>
-    </div>
-  `).join('') : '<div class="empty-state">Sin categorías.</div>';
-
-  categoriasEl.querySelectorAll('[data-edit-categoria]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const nombre = btn.dataset.editCategoria;
-      openTextPrompt('Renombrar categoría', nombre, (nuevo) => {
-        DB.renameCategoria(nombre, nuevo);
-        renderMaestros();
-        refreshCategoriaFilterOptions();
-        renderAll();
-        showToast('Categoría actualizada');
-      });
-    });
-  });
-  categoriasEl.querySelectorAll('[data-del-categoria]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const nombre = btn.dataset.delCategoria;
-      if (confirm(`¿Quitar "${nombre}" de la lista de categorías?`)) {
-        DB.deleteCategoria(nombre);
-        renderMaestros();
-        refreshCategoriaFilterOptions();
-        showToast('Categoría quitada de la lista');
       }
     });
   });
@@ -1180,15 +1166,8 @@ function wireMaestros() {
     openTextPrompt('Nueva empresa', '', (nombre) => {
       DB.addEmpresa(nombre);
       renderMaestros();
-      showToast('Empresa agregada');
-    });
-  });
-  document.getElementById('btnAgregarCategoria').addEventListener('click', () => {
-    openTextPrompt('Nueva categoría', '', (nombre) => {
-      DB.addCategoria(nombre);
-      renderMaestros();
       refreshCategoriaFilterOptions();
-      showToast('Categoría agregada');
+      showToast('Empresa agregada');
     });
   });
   renderMaestros();

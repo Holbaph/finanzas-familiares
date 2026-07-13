@@ -9,18 +9,19 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
 ## Qué incluye
 
 - **Resumen del mes**: ingresos, gastos comprometidos, balance disponible, pendiente por pagar,
-  progreso de pagos y desglose por categoría.
-- **Deudas**: agrupadas por categoría, con ícono a elección, tipo "gasto recurrente" (agua, luz,
-  suscripciones...) o "crédito en cuotas" (con N° total de cuotas, cuotas pagadas y por pagar,
-  barra de progreso). Al marcar una cuota como pagada, el acumulado avanza solo y detecta
-  automáticamente cuándo un crédito queda "Completa".
+  progreso de pagos y desglose por empresa.
+- **Deudas**: agrupadas por empresa (la empresa hace de categoría — no hay un campo aparte para
+  eso), con ícono a elección, tipo "gasto recurrente" (agua, luz, suscripciones...) o "crédito en
+  cuotas" (con N° total de cuotas, cuotas pagadas y por pagar, barra de progreso). Al marcar una
+  cuota como pagada, el acumulado avanza solo y detecta automáticamente cuándo un crédito queda
+  "Completa".
   - **Archivar / pagadas**: cualquier deuda se puede archivar (cuenta cerrada o saldada) sin
     perder su historial. Las activas son las únicas que aparecen en la lista principal; las
     archivadas se ven aparte en "Archivadas / pagadas", con la fecha en que se archivaron y el
     historial completo de pagos (con fecha de cada pago).
-  - **Empresas y categorías como maestros**: se eligen desde una lista (no hay que escribirlas
-    de nuevo cada vez) y se administran desde Ajustes → Empresas / Categorías de deudas, donde
-    se pueden agregar, renombrar (renombra también todas las deudas que ya la usaban) o quitar.
+  - **Empresas como maestro**: se eligen desde una lista (no hay que escribirlas de nuevo cada
+    vez) y se administran desde Ajustes → Empresas, donde se pueden agregar, renombrar (renombra
+    también todas las deudas que ya la usaban) o quitar.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
   Cada uno tiene:
@@ -30,7 +31,8 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   - **Foto del comprobante bancario** (el retiro que hiciste o el depósito que te hizo la
     empresa) para dejar registro de cuándo se cerró cada rendición.
   Las fotos se guardan comprimidas en el propio teléfono (IndexedDB) — nunca se suben a
-  ningún servidor.
+  ningún servidor. Cualquier foto (boleta o comprobante) se puede tocar para verla en
+  pantalla completa y revisar el detalle.
 - **Ingresos**: por fuente (sueldo, bono, etc.), fijos o variables, por mes.
 - **Bloqueo con PIN (4 dígitos) y/o Face ID / Touch ID**: para que nadie más abra la app desde
   el teléfono. El PIN se autodesbloquea al escribir el último dígito; si activas Face ID/Touch

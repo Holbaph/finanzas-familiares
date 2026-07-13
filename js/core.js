@@ -8,21 +8,8 @@ const STORAGE_KEYS = {
   gastos: 'ff_gastos_v1',
   meta: 'ff_meta_v1',
   empresas: 'ff_empresas_v1',
-  categorias: 'ff_categorias_v1',
   cierres: 'ff_cierres_v1',
 };
-
-// Categorías de deuda por defecto (solo se usan para inicializar el maestro editable
-// la primera vez; después el usuario puede agregar, renombrar o borrar desde Ajustes).
-const CATEGORIAS_DEFAULT = [
-  'Servicios Básicos',
-  'Suscripciones',
-  'Ahorro',
-  'Compras en Cuotas',
-  'Créditos',
-  'Tarjetas de Crédito',
-  'Otros',
-];
 
 const CATEGORIAS_CONSUMO = [
   'Comida',
@@ -93,7 +80,6 @@ const DB = {
       id: Utils.uid(),
       empresa: '',
       detalle: '',
-      categoria: 'Otros',
       icono: '📌',
       tipo: 'recurrente',
       cuotasTotales: null,
@@ -163,30 +149,6 @@ const DB = {
   },
   deleteEmpresa(nombre) {
     this.saveEmpresas(this.getEmpresas().filter(e => e !== nombre));
-  },
-
-  // ---------- Maestro de Categorías (deudas) ----------
-  getCategorias() {
-    const stored = this._read(STORAGE_KEYS.categorias, null);
-    if (stored === null) { this.saveCategorias(CATEGORIAS_DEFAULT); return [...CATEGORIAS_DEFAULT]; }
-    return stored;
-  },
-  saveCategorias(list) { this._write(STORAGE_KEYS.categorias, Array.from(new Set(list.filter(Boolean)))); },
-  addCategoria(nombre) {
-    nombre = (nombre || '').trim();
-    if (!nombre) return;
-    const list = this.getCategorias();
-    if (!list.includes(nombre)) this.saveCategorias([...list, nombre]);
-  },
-  renameCategoria(oldName, newName) {
-    newName = (newName || '').trim();
-    const list = this.getCategorias();
-    if (!newName || oldName === newName || !list.includes(oldName)) return;
-    this.saveCategorias([...list.filter(c => c !== oldName), newName]);
-    this.saveDeudas(this.getDeudas().map(d => d.categoria === oldName ? { ...d, categoria: newName } : d));
-  },
-  deleteCategoria(nombre) {
-    this.saveCategorias(this.getCategorias().filter(c => c !== nombre));
   },
 
   getPagos() { return this._read(STORAGE_KEYS.pagos, []); },
@@ -382,7 +344,6 @@ const DB = {
       gastos: this.getGastos(),
       meta: this.getMeta(),
       empresas: this.getEmpresas(),
-      categorias: this.getCategorias(),
       cierres: this.getCierres(),
       pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
       biometric: (typeof Biometric !== 'undefined') ? Biometric.getConfig() : null,
@@ -397,7 +358,6 @@ const DB = {
     this.saveGastos(data.gastos || []);
     if (data.meta) this.setMeta(data.meta);
     if (data.empresas) this.saveEmpresas(data.empresas);
-    if (data.categorias) this.saveCategorias(data.categorias);
     if (data.cierres) this.saveCierres(data.cierres);
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
     if (data.biometric && typeof Biometric !== 'undefined') Biometric.setConfig(data.biometric);
@@ -409,7 +369,6 @@ const DB = {
     localStorage.removeItem(STORAGE_KEYS.gastos);
     localStorage.removeItem(STORAGE_KEYS.meta);
     localStorage.removeItem(STORAGE_KEYS.empresas);
-    localStorage.removeItem(STORAGE_KEYS.categorias);
     localStorage.removeItem(STORAGE_KEYS.cierres);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
     if (typeof Biometric !== 'undefined') { Biometric.disable(); localStorage.removeItem(Biometric.KEY); }
@@ -417,11 +376,9 @@ const DB = {
   },
 
   // Un dispositivo nuevo arranca 100% vacío (sin deudas, ingresos ni gastos de ejemplo).
-  // Solo se inicializa la lista de categorías con valores genéricos útiles para cualquiera.
   // Si el dispositivo ya tenía datos (meta.seeded), esta función no toca nada.
   seedIfEmpty() {
     if (this.getMeta().seeded) return;
-    this.getCategorias(); // materializa el maestro de categorías por defecto
     this.setMeta({ seeded: true, mesActual: Utils.monthKey() });
   },
 
