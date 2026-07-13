@@ -1104,6 +1104,90 @@ function openGastoDetail(id) {
   });
 }
 
+// ---------- INFORMES (Excel) ----------
+function generarInformeExcel() {
+  const deudas = DB.getDeudas();
+  const pagos = DB.getPagos();
+  const ingresos = DB.getIngresos();
+  const gastos = DB.getGastos();
+
+  const meses = new Set([
+    ...ingresos.map(i => i.mes),
+    ...pagos.map(p => p.mes),
+    ...gastos.map(g => g.fecha.slice(0, 7)),
+  ]);
+  const mesesOrdenados = [...meses].sort();
+
+  const hojaResumen = {
+    nombre: 'Resumen Mensual',
+    encabezados: ['Mes', 'Ingresos', 'Gastos', 'Saldo Inicial', 'Balance', 'Cerrado', 'Saldo Trasladado'],
+    filas: mesesOrdenados.map(mes => {
+      const ingresosTotal = DB.getIngresosDeMes(mes).reduce((s, i) => s + Number(i.monto), 0);
+      const gastosTotal = DB.getPagosDeMes(mes).reduce((s, p) => s + Number(p.gasto), 0);
+      const saldoInicial = DB.getSaldoInicial(mes);
+      const balance = saldoInicial + ingresosTotal - gastosTotal;
+      const cierre = DB.getCierre(mes);
+      return [
+        Utils.monthLabel(mes), ingresosTotal, gastosTotal, saldoInicial, balance,
+        cierre ? 'Sí' : 'No', cierre ? Math.max(0, cierre.saldoFinal) : 0,
+      ];
+    }),
+  };
+
+  const hojaDeudas = {
+    nombre: 'Deudas',
+    encabezados: ['Empresa', 'Detalle', 'Tipo', 'Cuotas Totales', 'Valor Cuota', 'Cuotas Pagadas (base)', 'Estado', 'Fecha Archivo'],
+    filas: deudas.map(d => [
+      d.empresa, d.detalle, d.tipo === 'cuotas' ? 'Crédito en cuotas' : 'Gasto recurrente',
+      d.cuotasTotales ?? '', d.valorCuota, d.cuotasPagadasBase ?? 0,
+      d.activa ? 'Activa' : 'Archivada', d.fechaArchivo ? d.fechaArchivo.slice(0, 10) : '',
+    ]),
+  };
+
+  const hojaPagos = {
+    nombre: 'Historial de Pagos',
+    encabezados: ['Mes', 'Empresa', 'Detalle', 'Gasto', 'Pagado', 'Fecha de Pago', 'Cuota Acumulada'],
+    filas: pagos
+      .slice()
+      .sort((a, b) => a.mes.localeCompare(b.mes))
+      .map(p => {
+        const d = deudas.find(x => x.id === p.deudaId);
+        return [
+          p.mes, d ? d.empresa : '', d ? d.detalle : '', p.gasto,
+          p.pagado ? 'Sí' : 'No', p.fechaPago ? p.fechaPago.slice(0, 10) : '',
+          p.cuotaPagadaAcumulada ?? '',
+        ];
+      }),
+  };
+
+  const hojaIngresos = {
+    nombre: 'Ingresos',
+    encabezados: ['Mes', 'Fuente', 'Monto', 'Tipo', 'Notas'],
+    filas: ingresos.map(i => [i.mes, i.fuente, i.monto, i.tipo, i.notas || '']),
+  };
+
+  const hojaConsumo = {
+    nombre: 'Gastos - Consumo',
+    encabezados: ['Fecha', 'Detalle', 'Monto', 'Categoría', 'Notas'],
+    filas: gastos.filter(g => g.tipo === 'consumo').map(g => [g.fecha, g.detalle, g.monto, g.categoria, g.notas || '']),
+  };
+
+  const hojaRendir = {
+    nombre: 'Gastos - Por Rendir',
+    encabezados: ['Fecha', 'Detalle', 'Monto', 'Estado', 'Fecha Rendido', 'Fecha Reembolso'],
+    filas: gastos.filter(g => g.tipo === 'rendir').map(g => [
+      g.fecha, g.detalle, g.monto, g.estado,
+      g.fechaRendido ? g.fechaRendido.slice(0, 10) : '',
+      g.fechaReembolso ? g.fechaReembolso.slice(0, 10) : '',
+    ]),
+  };
+
+  XlsxWriter.descargar(
+    [hojaResumen, hojaDeudas, hojaPagos, hojaIngresos, hojaConsumo, hojaRendir],
+    `finanzas-informe-${Utils.monthKey()}.xlsx`
+  );
+}
+
 // ---------- AJUSTES ----------
 function renderUltimoRespaldo() {
   const info = DB.getMeta().ultimoRespaldo;
@@ -1116,6 +1200,16 @@ function renderUltimoRespaldo() {
 
 function wireAjustes() {
   renderUltimoRespaldo();
+
+  document.getElementById('btnExportarExcel').addEventListener('click', () => {
+    try {
+      generarInformeExcel();
+      showToast('Informe exportado');
+    } catch (e) {
+      console.error(e);
+      showToast('No se pudo generar el informe');
+    }
+  });
 
   document.getElementById('btnExport').addEventListener('click', () => {
     const nombre = `finanzas-respaldo-${Utils.monthKey()}.json`;

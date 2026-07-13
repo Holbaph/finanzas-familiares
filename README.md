@@ -50,6 +50,11 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   nada, el mes siguiente simplemente parte en $0 hasta que llegue el próximo ingreso. Se puede
   recalcular o deshacer en cualquier momento. La app recuerda cerrar el mes anterior mientras
   estés entre los días 1 y 5 del mes en curso.
+- **Informe en Excel**: Ajustes → Exportar informe a Excel genera un `.xlsx` real (con hojas
+  Resumen Mensual, Deudas, Historial de Pagos, Ingresos, Gastos - Consumo y Gastos - Por Rendir)
+  para revisar y analizar todo fuera de la app. Se genera enteramente en el teléfono, sin
+  ninguna librería externa ni conexión — es solo para lectura, no reemplaza al respaldo `.json`
+  (ese sí se puede volver a importar a la app).
 - **Ajustes**: exportar/importar un respaldo en `.json`, y borrar todos los datos.
 
 Un dispositivo nuevo (o recién reinstalado) arranca **completamente vacío** — sin deudas,
@@ -109,6 +114,7 @@ css/styles.css      Estilos (temas claro/oscuro/rosa/lavanda, diseño tipo iOS)
 js/core.js           Modelo de datos, localStorage, datos precargados de la planilla
 js/photos.js         Almacenamiento de fotos (boletas/comprobantes) en IndexedDB
 js/lock.js           Bloqueo con PIN (hash SHA-256, nunca texto plano)
+js/xlsx-writer.js     Generador de archivos .xlsx desde cero (sin librerías externas)
 js/app.js            Lógica de la interfaz, navegación y fix de viewport iOS
 manifest.json         Metadatos de instalación (PWA)
 sw.js                 Service Worker (cache offline)

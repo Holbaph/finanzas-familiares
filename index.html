@@ -193,6 +193,13 @@
         </label>
       </div>
       <div class="section-block">
+        <h2>Informes</h2>
+        <p class="muted">Exporta un Excel con todo: deudas, historial de pagos, ingresos, gastos
+          y un resumen mensual. Es solo para revisar/analizar — a diferencia del respaldo
+          .json, este archivo no se puede volver a importar a la app.</p>
+        <button id="btnExportarExcel" class="btn btn-secondary full">Exportar informe a Excel</button>
+      </div>
+      <div class="section-block">
         <h2>Zona de riesgo</h2>
         <button id="btnReset" class="btn btn-danger full">Borrar todos los datos</button>
       </div>
@@ -261,6 +268,7 @@
 <script src="js/core.js"></script>
 <script src="js/photos.js"></script>
 <script src="js/lock.js"></script>
+<script src="js/xlsx-writer.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

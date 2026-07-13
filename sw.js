@@ -1,5 +1,5 @@
 // Service worker — cachea el shell de la app para que funcione 100% sin conexión.
-const CACHE_NAME = 'finanzas-familiares-v14';
+const CACHE_NAME = 'finanzas-familiares-v15';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './js/core.js',
   './js/photos.js',
   './js/lock.js',
+  './js/xlsx-writer.js',
   './js/app.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
