@@ -132,10 +132,40 @@ function wireSheetOverlay() {
 function openSheet(html) {
   document.getElementById('sheetContent').innerHTML = html;
   document.getElementById('sheetOverlay').classList.remove('hidden');
+  guardandoRegistro = false;
 }
 function closeSheet() {
   document.getElementById('sheetOverlay').classList.add('hidden');
   document.getElementById('sheetContent').innerHTML = '';
+  guardandoRegistro = false;
+}
+
+// Evita que un doble-toque (frecuente en iOS cuando el primer toque solo cierra el
+// teclado) dispare el guardado dos veces: mientras un guardado está en curso, se
+// ignoran los toques adicionales al mismo botón, que además muestra un spinner.
+let guardandoRegistro = false;
+function conBloqueoDoble(btn, fn) {
+  return async () => {
+    if (guardandoRegistro) return;
+    guardandoRegistro = true;
+    const textoOriginal = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span>Guardando…`;
+    try {
+      const ok = await fn();
+      if (ok === false) {
+        guardandoRegistro = false;
+        btn.disabled = false;
+        btn.innerHTML = textoOriginal;
+      }
+      // si ok !== false, se asume que la propia acción cerró la sheet (closeSheet ya resetea la bandera)
+    } catch (e) {
+      console.error(e);
+      guardandoRegistro = false;
+      btn.disabled = false;
+      btn.innerHTML = textoOriginal;
+    }
+  };
 }
 // ---------- Visor de imágenes ampliadas ----------
 function wireLightbox() {
@@ -331,13 +361,14 @@ function abrirAjusteSaldoCierre(mes) {
     </div>
   `);
   document.getElementById('btnCancelarAjusteSaldo').addEventListener('click', closeSheet);
-  document.getElementById('btnGuardarAjusteSaldo').addEventListener('click', () => {
+  const btnGuardarAjusteSaldo = document.getElementById('btnGuardarAjusteSaldo');
+  btnGuardarAjusteSaldo.addEventListener('click', conBloqueoDoble(btnGuardarAjusteSaldo, () => {
     const nuevo = Utils.parseCLP(document.getElementById('f-saldo-ajustado').value);
     DB.ajustarCierre(mes, nuevo);
     closeSheet();
     renderAll();
     showToast('Saldo ajustado');
-  });
+  }));
 }
 
 // ---------- DEUDAS ----------
@@ -529,11 +560,12 @@ function openDeudaForm(deuda) {
   });
 
   document.getElementById('btnCancelarDeuda').addEventListener('click', closeSheet);
-  document.getElementById('btnGuardarDeuda').addEventListener('click', () => {
+  const btnGuardarDeuda = document.getElementById('btnGuardarDeuda');
+  btnGuardarDeuda.addEventListener('click', conBloqueoDoble(btnGuardarDeuda, () => {
     const empresaSel = document.getElementById('f-empresa').value;
     const empresa = empresaSel === '__nueva__' ? document.getElementById('f-empresa-nueva').value.trim() : empresaSel;
     const detalle = document.getElementById('f-detalle').value.trim();
-    if (!empresa || !detalle) { showToast('Completa empresa y detalle'); return; }
+    if (!empresa || !detalle) { showToast('Completa empresa y detalle'); return false; }
     const tipo = segmented.querySelector('button.active').dataset.tipo;
     const valorCuota = Utils.parseCLP(document.getElementById('f-valorCuota').value);
     const cuotasTotales = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasTotales').value, 10) || null) : null;
@@ -559,7 +591,7 @@ function openDeudaForm(deuda) {
     refreshCategoriaFilterOptions();
     renderMaestros();
     renderAll();
-  });
+  }));
 }
 
 function openDeudaDetail(id) {
@@ -724,11 +756,12 @@ function openIngresoForm(ingreso) {
   });
 
   document.getElementById('btnCancelarIngreso').addEventListener('click', closeSheet);
-  document.getElementById('btnGuardarIngreso').addEventListener('click', () => {
+  const btnGuardarIngreso = document.getElementById('btnGuardarIngreso');
+  btnGuardarIngreso.addEventListener('click', conBloqueoDoble(btnGuardarIngreso, () => {
     const fuente = document.getElementById('f-fuente').value.trim();
     const monto = Utils.parseCLP(document.getElementById('f-monto').value);
     const tipo = seg.querySelector('button.active').dataset.tipo;
-    if (!fuente || !monto) { showToast('Completa fuente y monto'); return; }
+    if (!fuente || !monto) { showToast('Completa fuente y monto'); return false; }
     if (editing) {
       DB.updateIngreso(ingreso.id, { fuente, monto, tipo });
       showToast('Ingreso actualizado');
@@ -738,7 +771,7 @@ function openIngresoForm(ingreso) {
     }
     closeSheet();
     renderAll();
-  });
+  }));
 }
 
 // ---------- GASTOS (consumo propio / por rendir a la empresa) ----------
@@ -893,6 +926,7 @@ function openGastoForm(gasto, tipoDefault) {
     });
   }
 
+  const btnGuardarGasto = document.getElementById('btnGuardarGasto');
   document.getElementById('btnTomarBoleta').addEventListener('click', () => document.getElementById('inputBoleta').click());
   document.getElementById('inputBoleta').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -901,12 +935,14 @@ function openGastoForm(gasto, tipoDefault) {
     document.getElementById('previewBoleta').innerHTML = `<img class="photo-preview" src="${localUrl}">`;
     hacerAmpliable(document.getElementById('previewBoleta').querySelector('img'));
     const id = fotoBoletaId || Utils.uid();
+    btnGuardarGasto.disabled = true;
     await Photos.save(id, file);
     fotoBoletaId = id;
+    btnGuardarGasto.disabled = false;
   });
 
   document.getElementById('btnCancelarGasto').addEventListener('click', closeSheet);
-  document.getElementById('btnGuardarGasto').addEventListener('click', () => {
+  btnGuardarGasto.addEventListener('click', conBloqueoDoble(btnGuardarGasto, () => {
     const tipo = tipoSeg.querySelector('button.active').dataset.tipo;
     const esRendir = tipo === 'rendir';
     const detalle = document.getElementById('f-detalle').value.trim();
@@ -914,7 +950,7 @@ function openGastoForm(gasto, tipoDefault) {
     const fecha = document.getElementById('f-fecha').value || new Date().toISOString().slice(0, 10);
     const notas = document.getElementById('f-notas').value.trim();
     const categoria = esRendir ? 'Gasto Empresa' : document.getElementById('f-categoria').value;
-    if (!detalle || !monto) { showToast('Completa detalle y monto'); return; }
+    if (!detalle || !monto) { showToast('Completa detalle y monto'); return false; }
 
     if (editing) {
       const patch = { tipo, detalle, monto, fecha, notas, categoria, fotoBoletaId };
@@ -927,7 +963,7 @@ function openGastoForm(gasto, tipoDefault) {
     }
     closeSheet();
     renderAll();
-  });
+  }));
 }
 
 function openGastoDetail(id) {
@@ -1113,13 +1149,14 @@ function openTextPrompt(titulo, valorInicial, onGuardar) {
   const input = document.getElementById('f-prompt-valor');
   setTimeout(() => input.focus(), 50);
   document.getElementById('btnPromptCancelar').addEventListener('click', closeSheet);
-  const guardar = () => {
+  const btnPromptGuardar = document.getElementById('btnPromptGuardar');
+  const guardar = conBloqueoDoble(btnPromptGuardar, () => {
     const val = input.value.trim();
-    if (!val) { showToast('Escribe un nombre'); return; }
+    if (!val) { showToast('Escribe un nombre'); return false; }
     onGuardar(val);
     closeSheet();
-  };
-  document.getElementById('btnPromptGuardar').addEventListener('click', guardar);
+  });
+  btnPromptGuardar.addEventListener('click', guardar);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') guardar(); });
 }
 
@@ -1300,18 +1337,19 @@ function openPinSetupForm(cambiando) {
     });
   });
   document.getElementById('btnCancelarPin').addEventListener('click', closeSheet);
-  document.getElementById('btnGuardarPin').addEventListener('click', async () => {
+  const btnGuardarPin = document.getElementById('btnGuardarPin');
+  btnGuardarPin.addEventListener('click', conBloqueoDoble(btnGuardarPin, async () => {
     const p1 = document.getElementById('f-pin1').value;
     const p2 = document.getElementById('f-pin2').value;
     if (p1.length !== Lock.PIN_LARGO || p1 !== p2) {
       document.getElementById('pinFormError').classList.remove('hidden');
-      return;
+      return false;
     }
     await Lock.setPin(p1);
     closeSheet();
     renderLockUi();
     showToast(cambiando ? 'PIN actualizado' : 'Bloqueo activado');
-  });
+  }));
 }
 
 // ---------- Temas ----------

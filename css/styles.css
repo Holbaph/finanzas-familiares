@@ -759,3 +759,18 @@ html.locked-boot #app { visibility: hidden; }
   z-index: 1;
 }
 .ampliable { cursor: zoom-in; }
+
+/* ---------- Spinner de carga (botones "Guardar") ---------- */
+.spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: -3px;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn:disabled { opacity: 0.75; cursor: default; }
