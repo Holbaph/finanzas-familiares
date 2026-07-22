@@ -89,6 +89,7 @@ const DB = {
       activa: true,
       fechaArchivo: null,
       notas: '',
+      fotoId: null,
       creadoEn: new Date().toISOString(),
       ...deuda,
     };
@@ -105,8 +106,10 @@ const DB = {
     return list[idx];
   },
   deleteDeuda(id) {
+    const deuda = this.getDeuda(id);
     this.saveDeudas(this.getDeudas().filter(d => d.id !== id));
     this.savePagos(this.getPagos().filter(p => p.deudaId !== id));
+    if (deuda && deuda.fotoId && typeof Photos !== 'undefined') Photos.delete(deuda.fotoId);
   },
   getDeudasArchivadas() {
     return this.getDeudas().filter(d => !d.activa).sort((a, b) => (b.fechaArchivo || '').localeCompare(a.fechaArchivo || ''));

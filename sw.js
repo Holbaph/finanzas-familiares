@@ -1,5 +1,5 @@
 // Service worker — cachea el shell de la app para que funcione 100% sin conexión.
-const CACHE_NAME = 'finanzas-familiares-v15';
+const CACHE_NAME = 'finanzas-familiares-v16';
 const ASSETS = [
   './',
   './index.html',

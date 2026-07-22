@@ -454,7 +454,7 @@ function deudaCardHtml(deuda, pago) {
       </button>`;
 
   return `<div class="deuda-card" data-open-id="${deuda.id}">
-    <div class="deuda-icon">${escapeHtml(deuda.icono || '📌')}</div>
+    <div class="deuda-icon" id="deuda-icon-${deuda.id}">${escapeHtml(deuda.icono || '📌')}</div>
     <div class="deuda-info">
       <div class="deuda-empresa">${escapeHtml(deuda.empresa)}</div>
       <div class="deuda-detalle">${escapeHtml(deuda.detalle)}</div>
@@ -488,6 +488,15 @@ function attachDeudaCardEvents(container) {
     });
   });
   container.querySelectorAll('[data-open-id]').forEach(card => {
+    const id = card.dataset.openId;
+    const deuda = DB.getDeuda(id);
+    if (deuda && deuda.fotoId) {
+      Photos.getURL(deuda.fotoId).then(url => {
+        if (!url) return;
+        const iconEl = card.querySelector(`#deuda-icon-${id}`);
+        if (iconEl) iconEl.innerHTML = `<img src="${url}">`;
+      });
+    }
     card.addEventListener('click', () => openDeudaDetail(card.dataset.openId));
   });
 }
@@ -543,6 +552,14 @@ function openDeudaForm(deuda) {
       <label>Notas (opcional)</label>
       <textarea id="f-notas">${escapeHtml(d.notas || '')}</textarea>
     </div>
+    <div class="form-group">
+      <label>Foto (boleta, producto, contrato...)</label>
+      <div class="photo-attach-row">
+        <div id="previewFotoDeuda"><div class="photo-preview-empty">📷</div></div>
+        <button type="button" class="btn-photo" id="btnTomarFotoDeuda">📷 Tomar / adjuntar foto</button>
+        <input type="file" id="inputFotoDeuda" accept="image/*" capture="environment" hidden>
+      </div>
+    </div>
     <div class="sheet-actions">
       <button class="btn btn-primary full" id="btnGuardarDeuda">Guardar</button>
       <button class="btn btn-secondary full" id="btnCancelarDeuda">Cancelar</button>
@@ -574,8 +591,30 @@ function openDeudaForm(deuda) {
     document.getElementById('f-empresa-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
   });
 
-  document.getElementById('btnCancelarDeuda').addEventListener('click', closeSheet);
   const btnGuardarDeuda = document.getElementById('btnGuardarDeuda');
+  let fotoId = d.fotoId || null;
+  if (fotoId) {
+    Photos.getURL(fotoId).then(url => {
+      if (!url) return;
+      document.getElementById('previewFotoDeuda').innerHTML = `<img class="photo-preview" src="${url}">`;
+      hacerAmpliable(document.getElementById('previewFotoDeuda').querySelector('img'));
+    });
+  }
+  document.getElementById('btnTomarFotoDeuda').addEventListener('click', () => document.getElementById('inputFotoDeuda').click());
+  document.getElementById('inputFotoDeuda').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const localUrl = URL.createObjectURL(file);
+    document.getElementById('previewFotoDeuda').innerHTML = `<img class="photo-preview" src="${localUrl}">`;
+    hacerAmpliable(document.getElementById('previewFotoDeuda').querySelector('img'));
+    const id = fotoId || Utils.uid();
+    btnGuardarDeuda.disabled = true;
+    await Photos.save(id, file);
+    fotoId = id;
+    btnGuardarDeuda.disabled = false;
+  });
+
+  document.getElementById('btnCancelarDeuda').addEventListener('click', closeSheet);
   btnGuardarDeuda.addEventListener('click', conBloqueoDoble(btnGuardarDeuda, () => {
     const empresaSel = document.getElementById('f-empresa').value;
     const empresa = empresaSel === '__nueva__' ? document.getElementById('f-empresa-nueva').value.trim() : empresaSel;
@@ -590,7 +629,7 @@ function openDeudaForm(deuda) {
     DB.addEmpresa(empresa);
 
     if (editing) {
-      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas });
+      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas, fotoId });
       const pagoActual = DB.getPago(deuda.id, currentMonth);
       if (pagoActual && !pagoActual.pagado) {
         DB.upsertPago({ ...pagoActual, gasto: valorCuota });
@@ -598,7 +637,7 @@ function openDeudaForm(deuda) {
       showToast('Deuda actualizada');
     } else {
       const cuotasPagadasBase = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasPagadasBase').value, 10) || 0) : 0;
-      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio: currentMonth });
+      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio: currentMonth, fotoId });
       DB.ensureMes(currentMonth);
       showToast('Deuda agregada');
     }
@@ -618,6 +657,7 @@ function openDeudaDetail(id) {
     <h2>${escapeHtml(deuda.icono || '📌')} ${escapeHtml(deuda.detalle)}</h2>
     <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}</p>
     ${!deuda.activa ? `<div class="form-group"><span class="badge-estado reembolsado">Archivada el ${formatFechaCorta(deuda.fechaArchivo.slice(0, 10))}</span></div>` : ''}
+    ${deuda.fotoId ? `<div class="form-group"><div id="previewFotoDeudaDetalle"><div class="photo-preview-empty">📷</div></div></div>` : ''}
     <div class="sheet-actions">
       <button class="btn btn-secondary full" id="btnEditarDeuda">Editar datos</button>
       ${deuda.activa ? '<button class="btn btn-secondary full" id="btnArchivarDeuda">Archivar (cuenta saldada/cerrada)</button>' : '<button class="btn btn-secondary full" id="btnReactivarDeuda">Reactivar deuda</button>'}
@@ -638,6 +678,14 @@ function openDeudaDetail(id) {
       <button class="btn btn-secondary full" id="btnCerrarDetalle">Cerrar</button>
     </div>
   `);
+
+  if (deuda.fotoId) {
+    Photos.getURL(deuda.fotoId).then(url => {
+      if (!url) return;
+      document.getElementById('previewFotoDeudaDetalle').innerHTML = `<img class="photo-preview" src="${url}">`;
+      hacerAmpliable(document.getElementById('previewFotoDeudaDetalle').querySelector('img'));
+    });
+  }
 
   document.getElementById('btnEditarDeuda').addEventListener('click', () => openDeudaForm(deuda));
   document.getElementById('btnCerrarDetalle').addEventListener('click', closeSheet);
