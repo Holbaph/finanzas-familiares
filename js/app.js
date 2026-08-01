@@ -478,7 +478,14 @@ function refreshCategoriaFilterOptions() {
 
 function renderDeudas() {
   const filtro = document.getElementById('filtroCategoria').value;
-  const deudas = DB.getDeudas().filter(d => d.activa && (!filtro || d.empresa === filtro));
+  const deudas = DB.getDeudas().filter(d => {
+    if (!filtro || d.empresa === filtro) {
+      if (d.activa) return true;
+      // Recién archivada este mismo mes: se sigue mostrando hasta que cambie el mes.
+      return d.fechaArchivo && d.fechaArchivo.slice(0, 7) === currentMonth;
+    }
+    return false;
+  });
   const container = document.getElementById('deudasList');
   document.getElementById('archivadasCount').textContent = `(${DB.getDeudasArchivadas().length})`;
 
@@ -528,13 +535,19 @@ function renderDeudas() {
 function deudaCardHtml(deuda, pago) {
   const acumulada = pago ? pago.cuotaPagadaAcumulada : null;
   const finalizada = deuda.tipo === 'cuotas' && deuda.cuotasTotales != null && acumulada != null && acumulada >= deuda.cuotasTotales;
+  const ultimaCuotaPendiente = deuda.tipo === 'cuotas' && deuda.cuotasTotales != null && !finalizada
+    && !(pago && pago.pagado) && (acumulada ?? 0) + 1 >= deuda.cuotasTotales;
   const cuotasInfo = deuda.tipo === 'cuotas'
     ? `${acumulada ?? 0}/${deuda.cuotasTotales ?? '?'} cuotas`
     : 'Gasto recurrente';
   const pct = (deuda.tipo === 'cuotas' && deuda.cuotasTotales) ? Math.min(100, Math.round(((acumulada ?? 0) / deuda.cuotasTotales) * 100)) : null;
 
-  const rightControl = finalizada
+  const rightControl = !deuda.activa
+    ? `<span class="finalizada-badge" style="cursor:default">✓ Archivada</span>`
+    : finalizada
     ? `<button class="finalizada-badge" data-archivar-id="${deuda.id}">✓ Completa · Archivar</button>`
+    : ultimaCuotaPendiente
+    ? `<button class="finalizada-badge" data-pagar-archivar-id="${deuda.id}">Pagar y archivar</button>`
     : `<button class="estado-toggle ${pago && pago.pagado ? 'pagado' : 'pendiente'}" data-toggle-id="${deuda.id}">
         ${pago && pago.pagado ? '✓ Pagado' : 'Pendiente'}
       </button>`;
@@ -563,6 +576,16 @@ function attachDeudaCardEvents(container) {
       const pago = DB.getPago(id, currentMonth);
       DB.marcarPago(id, currentMonth, !(pago && pago.pagado));
       renderAll();
+    });
+  });
+  container.querySelectorAll('[data-pagar-archivar-id]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.pagarArchivarId;
+      DB.marcarPago(id, currentMonth, true);
+      DB.archivarDeuda(id);
+      renderAll();
+      showToast('Última cuota pagada y deuda archivada');
     });
   });
   container.querySelectorAll('[data-archivar-id]').forEach(btn => {
