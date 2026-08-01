@@ -25,7 +25,8 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   - **Foto (boleta, producto, contrato...)**: opcional, al crear o editar una deuda. Se ve como
     miniatura en la tarjeta y en el detalle, y se puede tocar para verla ampliada.
   - Al filtrar Deudas por una empresa, arriba de la lista aparece cuántas deudas tienes con ella
-    y el total a pagar ese mes entre todas.
+    y el total a pagar ese mes entre todas. Sin filtro, cada grupo de empresa en la lista ya
+    muestra su propio total al lado del nombre.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
   Cada uno tiene:
@@ -40,10 +41,13 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
 - **Ingresos**: por fuente (sueldo, bono, etc.), fijos o variables, por mes.
 - **Bloqueo con PIN (4 dígitos) y/o Face ID / Touch ID**: para que nadie más abra la app desde
   el teléfono. El PIN se autodesbloquea al escribir el último dígito; si activas Face ID/Touch
-  ID, se intenta automáticamente al abrir. La app se vuelve a bloquear sola cada vez que se
-  oculta/cierra. Si no puedes ingresar, hay una opción en la misma pantalla de bloqueo para
-  borrar todo y empezar de nuevo (es la única forma de recuperar el acceso, ya que ni el PIN
-  ni los datos de Face ID se guardan en texto plano ni se pueden leer).
+  ID, se intenta automáticamente al abrir. Si no puedes ingresar, hay una opción en la misma
+  pantalla de bloqueo para borrar todo y empezar de nuevo (es la única forma de recuperar el
+  acceso, ya que ni el PIN ni los datos de Face ID se guardan en texto plano ni se pueden leer).
+  - **Tiempo de gracia**: en Ajustes → Seguridad eliges cuánto debe pasar desde que sales de la
+    app (cambias de app, apagas la pantalla) para que vuelva a pedir acceso — Inmediatamente,
+    30 segundos, 1 minuto (por defecto), 5 o 15 minutos. Si vuelves antes de ese tiempo, no
+    te pide nada de nuevo. Funciona igual en iPhone, computador o tablet.
 - **Temas**: Automático, Claro, Oscuro, Rosa, Rosa Noche y Lavanda, en Ajustes → Apariencia.
 - **Navegación por mes**: al pasar a un mes nuevo, la app genera automáticamente el gasto
   esperado de cada deuda activa (igual que arrastrar las columnas de tu planilla).

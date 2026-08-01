@@ -24,6 +24,12 @@ function mostrarPantallaBloqueo() {
   if (Biometric.isEnabled()) intentarBiometrico();
 }
 
+// Tiempo de gracia: si vuelves a la app antes de que pase este lapso desde que se
+// ocultó (cambio de app, notificación, etc.), no vuelve a pedir PIN/Face ID. Si el
+// sistema mata la página y hay que recargarla de cero, boot() igual bloquea siempre
+// (no hay forma de saber cuánto tiempo pasó, así que se prefiere pedir el acceso).
+let ultimoOculto = null;
+
 function boot() {
   applyTheme(DB.getMeta().tema || 'auto');
   wireLock();
@@ -34,7 +40,14 @@ function boot() {
     init();
   }
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && protegida()) mostrarPantallaBloqueo();
+    if (!protegida()) return;
+    if (document.hidden) {
+      ultimoOculto = Date.now();
+    } else if (ultimoOculto != null) {
+      const timeoutMs = (DB.getMeta().bloqueoTimeoutSeg ?? 60) * 1000;
+      if (Date.now() - ultimoOculto >= timeoutMs) mostrarPantallaBloqueo();
+      ultimoOculto = null;
+    }
   });
 }
 
@@ -426,12 +439,14 @@ function renderDeudas() {
   });
 
   container.innerHTML = Object.keys(grupos).sort().map(cat => {
+    let totalGrupo = 0;
     const items = grupos[cat].map(d => {
       const pago = DB.getPago(d.id, currentMonth);
+      totalGrupo += Number(pago ? pago.gasto : d.valorCuota);
       return deudaCardHtml(d, pago);
     }).join('');
     return `<div class="deuda-group">
-      <div class="deuda-group-title">${escapeHtml(cat)}</div>
+      <div class="deuda-group-title"><span>${escapeHtml(cat)}</span><span class="deuda-group-total">${Utils.formatCLP(totalGrupo)}</span></div>
       <div class="deuda-group-items">${items}</div>
     </div>`;
   }).join('');
@@ -1461,6 +1476,12 @@ function wireSeguridad() {
     if (!protegida()) { showToast('Primero activa un PIN o Face ID'); return; }
     mostrarPantallaBloqueo();
   });
+  const bloqueoTimeoutSelect = document.getElementById('bloqueoTimeoutSelect');
+  bloqueoTimeoutSelect.value = String(DB.getMeta().bloqueoTimeoutSeg ?? 60);
+  bloqueoTimeoutSelect.addEventListener('change', () => {
+    DB.setMeta({ bloqueoTimeoutSeg: parseInt(bloqueoTimeoutSelect.value, 10) });
+    showToast('Preferencia guardada');
+  });
   renderLockUi();
 }
 
@@ -1473,6 +1494,7 @@ async function renderLockUi() {
   document.getElementById('btnCambiarPin').classList.toggle('hidden', !enabled);
   document.getElementById('btnDesactivarPin').classList.toggle('hidden', !enabled);
   document.getElementById('btnBloquearAhora').classList.toggle('hidden', !protegida());
+  document.getElementById('bloqueoTimeoutGroup').classList.toggle('hidden', !protegida());
 
   const bioDisponible = await Biometric.isAvailable();
   const bioActivo = Biometric.isEnabled();

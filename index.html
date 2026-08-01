@@ -180,6 +180,16 @@
         <p class="muted" id="bioStatusText" style="margin-top:14px"></p>
         <button id="btnActivarBio" class="btn btn-secondary full hidden">Activar Face ID / Touch ID</button>
         <button id="btnDesactivarBio" class="btn btn-secondary full hidden">Desactivar Face ID / Touch ID</button>
+        <div class="form-group" id="bloqueoTimeoutGroup" style="margin-top:14px">
+          <label>Bloquear después de salir de la app</label>
+          <select id="bloqueoTimeoutSelect">
+            <option value="0">Inmediatamente</option>
+            <option value="30">30 segundos</option>
+            <option value="60">1 minuto</option>
+            <option value="300">5 minutos</option>
+            <option value="900">15 minutos</option>
+          </select>
+        </div>
         <button id="btnBloquearAhora" class="btn btn-secondary full hidden">Bloquear ahora</button>
       </div>
       <div class="section-block">

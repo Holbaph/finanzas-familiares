@@ -207,6 +207,9 @@ main#views {
 
 .deuda-groups { display: flex; flex-direction: column; gap: 18px; }
 .deuda-group-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
   font-size: 13px;
   font-weight: 700;
   color: var(--text-muted);
@@ -214,6 +217,7 @@ main#views {
   letter-spacing: 0.4px;
   margin: 0 0 8px 4px;
 }
+.deuda-group-total { color: var(--accent); font-size: 13px; }
 .deuda-group-items { display: flex; flex-direction: column; gap: 8px; }
 
 .deuda-card {
