@@ -30,15 +30,40 @@ function mostrarPantallaBloqueo() {
 // (no hay forma de saber cuánto tiempo pasó, así que se prefiere pedir el acceso).
 let ultimoOculto = null;
 
-function boot() {
+function mostrarOverlayArranque(id) {
+  ['loginOverlay', 'cargaOverlay', 'errorConexionOverlay'].forEach(otro => {
+    document.getElementById(otro).classList.toggle('visible', otro === id);
+  });
+}
+function ocultarOverlaysArranque() {
+  ['loginOverlay', 'cargaOverlay', 'errorConexionOverlay'].forEach(id => {
+    document.getElementById(id).classList.remove('visible');
+  });
+}
+
+async function boot() {
   applyTheme(DB.getMeta().tema || 'auto');
   wireLock();
-  if (protegida()) {
-    mostrarPantallaBloqueo();
+  wireLoginScreen();
+
+  if (typeof SUPABASE_CONFIGURADO !== 'undefined' && !SUPABASE_CONFIGURADO) {
+    document.documentElement.classList.remove('locked-boot');
+    mostrarOverlayArranque('errorConexionOverlay');
+    document.querySelector('#errorConexionOverlay h2').textContent = 'Falta configurar Supabase';
+    document.querySelector('#errorConexionOverlay .muted').textContent =
+      'Edita js/supabase-config.js con la URL y la anon key de tu proyecto de Supabase (ver README).';
+    document.getElementById('btnReintentarConexion').classList.add('hidden');
+    return;
+  }
+
+  const session = await Auth.getSession();
+  if (session) {
+    await continuarConSesion();
   } else {
     document.documentElement.classList.remove('locked-boot');
-    init();
+    mostrarOverlayArranque('loginOverlay');
   }
+
   document.addEventListener('visibilitychange', () => {
     if (!protegida()) return;
     if (document.hidden) {
@@ -48,6 +73,52 @@ function boot() {
       if (Date.now() - ultimoOculto >= timeoutMs) mostrarPantallaBloqueo();
       ultimoOculto = null;
     }
+  });
+}
+
+async function continuarConSesion() {
+  document.documentElement.classList.remove('locked-boot');
+  mostrarOverlayArranque('cargaOverlay');
+  try {
+    await DB.cargarTodoDesdeSupabase();
+  } catch (e) {
+    console.error(e);
+    document.querySelector('#errorConexionOverlay h2').textContent = 'Sin conexión';
+    document.querySelector('#errorConexionOverlay .muted').textContent =
+      'Esta app necesita internet para funcionar. Revisa tu conexión e inténtalo de nuevo.';
+    document.getElementById('btnReintentarConexion').classList.remove('hidden');
+    mostrarOverlayArranque('errorConexionOverlay');
+    return;
+  }
+  ocultarOverlaysArranque();
+  if (protegida()) {
+    mostrarPantallaBloqueo();
+  } else {
+    document.documentElement.classList.remove('locked-boot');
+    init();
+  }
+}
+
+function wireLoginScreen() {
+  const btnLogin = document.getElementById('btnLogin');
+  btnLogin.addEventListener('click', conBloqueoDoble(btnLogin, async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) { showToast('Completa correo y contraseña'); return false; }
+    document.getElementById('loginError').classList.add('hidden');
+    try {
+      await Auth.login(email, password);
+    } catch (e) {
+      document.getElementById('loginError').textContent = 'Correo o contraseña incorrectos.';
+      document.getElementById('loginError').classList.remove('hidden');
+      return false;
+    }
+    await continuarConSesion();
+  }));
+  document.getElementById('btnReintentarConexion').addEventListener('click', async () => {
+    const session = await Auth.getSession();
+    if (session) await continuarConSesion();
+    else mostrarOverlayArranque('loginOverlay');
   });
 }
 
@@ -1264,6 +1335,16 @@ function renderUltimoRespaldo() {
 function wireAjustes() {
   renderUltimoRespaldo();
 
+  Auth.getSession().then(session => {
+    document.getElementById('cuentaInfo').textContent = session ? `Sesión iniciada como ${session.user.email}` : '';
+  });
+  document.getElementById('btnCerrarSesion').addEventListener('click', async () => {
+    if (confirm('¿Cerrar sesión? Tendrás que volver a ingresar tu correo y contraseña.')) {
+      await Auth.logout();
+      location.reload();
+    }
+  });
+
   document.getElementById('btnExportarExcel').addEventListener('click', () => {
     try {
       generarInformeExcel();
@@ -1307,15 +1388,20 @@ function wireAjustes() {
     e.target.value = '';
   });
 
-  document.getElementById('btnReset').addEventListener('click', () => {
-    if (confirm('Esto borrará todos los datos guardados en este dispositivo. ¿Continuar?')) {
-      DB.resetAll();
-      DB.seedIfEmpty();
-      currentMonth = DB.getMeta().mesActual || Utils.monthKey();
-      renderAll();
-      renderLockUi();
-      renderUltimoRespaldo();
-      showToast('Datos reiniciados');
+  document.getElementById('btnReset').addEventListener('click', async () => {
+    if (confirm('Esto borrará TODOS los datos en la nube (afecta a cualquiera que use esta cuenta, no solo este dispositivo). ¿Continuar?')) {
+      try {
+        await DB.resetAll();
+        DB.seedIfEmpty();
+        currentMonth = DB.getMeta().mesActual || Utils.monthKey();
+        renderAll();
+        renderLockUi();
+        renderUltimoRespaldo();
+        showToast('Datos reiniciados');
+      } catch (e) {
+        console.error(e);
+        showToast('No se pudo borrar todo (revisa tu conexión) — intenta de nuevo');
+      }
     }
   });
 
@@ -1411,9 +1497,12 @@ function wireLock() {
   });
   document.getElementById('btnUsarFaceId').addEventListener('click', intentarBiometrico);
   document.getElementById('btnLockForgot').addEventListener('click', () => {
-    if (confirm('Esto borrará TODOS los datos de la app (deudas, gastos, ingresos y fotos) para restablecer el acceso. ¿Continuar?')) {
-      DB.resetAll();
-      location.reload();
+    if (confirm('Esto quita el PIN y Face ID/Touch ID de este dispositivo (tus datos no se tocan, siguen en la nube). Podrás activarlos de nuevo desde Ajustes. ¿Continuar?')) {
+      Lock.disable();
+      Biometric.disable();
+      Lock.hideOverlay();
+      init();
+      showToast('Bloqueo local desactivado');
     }
   });
 }

@@ -1,14 +1,16 @@
-// core.js — utilidades, capa de datos (localStorage) y datos semilla de la planilla.
-// Todo el estado vive en localStorage. No hay llamadas de red en ningún punto de este archivo.
+// core.js — capa de datos. Los datos financieros (deudas, pagos, ingresos, gastos,
+// empresas, cierres) viven en Supabase (Postgres) y se comparten entre todos los
+// dispositivos con sesión iniciada; "meta" (tema, mes actual, preferencias de
+// bloqueo) es deliberadamente local a cada dispositivo, vía localStorage, porque no
+// tiene sentido compartirla entre personas o equipos.
+//
+// El resto de la app (app.js) sigue llamando a DB.getDeudas(), DB.addDeuda(), etc.
+// exactamente igual que antes: la lectura es síncrona (lee de una caché en memoria
+// ya cargada al iniciar sesión) y cada escritura además dispara una sincronización
+// en segundo plano hacia Supabase, avisando con un toast si falla por conexión.
 
 const STORAGE_KEYS = {
-  deudas: 'ff_deudas_v1',
-  pagos: 'ff_pagos_v1',
-  ingresos: 'ff_ingresos_v1',
-  gastos: 'ff_gastos_v1',
   meta: 'ff_meta_v1',
-  empresas: 'ff_empresas_v1',
-  cierres: 'ff_cierres_v1',
 };
 
 const CATEGORIAS_CONSUMO = [
@@ -57,58 +59,133 @@ const Utils = {
   },
 };
 
-const DB = {
-  _read(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch (e) {
-      console.error('Error leyendo', key, e);
-      return fallback;
+// ---------- Conversión camelCase (JS) <-> snake_case (columnas Postgres) ----------
+function deudaToRow(d) {
+  return {
+    id: d.id, empresa: d.empresa, detalle: d.detalle, icono: d.icono, tipo: d.tipo,
+    cuotas_totales: d.cuotasTotales, valor_cuota: d.valorCuota, cuotas_pagadas_base: d.cuotasPagadasBase,
+    fecha_inicio: d.fechaInicio, activa: d.activa, fecha_archivo: d.fechaArchivo, notas: d.notas,
+    foto_id: d.fotoId, creado_en: d.creadoEn,
+  };
+}
+function rowToDeuda(r) {
+  return {
+    id: r.id, empresa: r.empresa, detalle: r.detalle, icono: r.icono, tipo: r.tipo,
+    cuotasTotales: r.cuotas_totales, valorCuota: Number(r.valor_cuota), cuotasPagadasBase: r.cuotas_pagadas_base,
+    fechaInicio: r.fecha_inicio, activa: r.activa, fechaArchivo: r.fecha_archivo, notas: r.notas || '',
+    fotoId: r.foto_id, creadoEn: r.creado_en,
+  };
+}
+function pagoToRow(p) {
+  return {
+    id: p.id, deuda_id: p.deudaId, mes: p.mes, gasto: p.gasto,
+    cuota_pagada_acumulada: p.cuotaPagadaAcumulada, pagado: p.pagado, fecha_pago: p.fechaPago,
+  };
+}
+function rowToPago(r) {
+  return {
+    id: r.id, deudaId: r.deuda_id, mes: r.mes, gasto: Number(r.gasto),
+    cuotaPagadaAcumulada: r.cuota_pagada_acumulada, pagado: r.pagado, fechaPago: r.fecha_pago,
+  };
+}
+function ingresoToRow(i) {
+  return { id: i.id, fuente: i.fuente, monto: i.monto, mes: i.mes, tipo: i.tipo, notas: i.notas };
+}
+function rowToIngreso(r) {
+  return { id: r.id, fuente: r.fuente, monto: Number(r.monto), mes: r.mes, tipo: r.tipo, notas: r.notas || '' };
+}
+function gastoToRow(g) {
+  return {
+    id: g.id, tipo: g.tipo, detalle: g.detalle, monto: g.monto, fecha: g.fecha, categoria: g.categoria,
+    notas: g.notas, foto_boleta_id: g.fotoBoletaId, estado: g.estado, fecha_rendido: g.fechaRendido,
+    fecha_reembolso: g.fechaReembolso, foto_comprobante_id: g.fotoComprobanteId, creado_en: g.creadoEn,
+  };
+}
+function rowToGasto(r) {
+  return {
+    id: r.id, tipo: r.tipo, detalle: r.detalle, monto: Number(r.monto), fecha: r.fecha, categoria: r.categoria,
+    notas: r.notas || '', fotoBoletaId: r.foto_boleta_id, estado: r.estado, fechaRendido: r.fecha_rendido,
+    fechaReembolso: r.fecha_reembolso, fotoComprobanteId: r.foto_comprobante_id, creadoEn: r.creado_en,
+  };
+}
+function cierreToRow(c) {
+  return { mes: c.mes, saldo_final: c.saldoFinal, fecha_cierre: c.fechaCierre, ajustado: c.ajustado, fecha_ajuste: c.fechaAjuste };
+}
+function rowToCierre(r) {
+  return { mes: r.mes, saldoFinal: Number(r.saldo_final), fechaCierre: r.fecha_cierre, ajustado: r.ajustado, fechaAjuste: r.fecha_ajuste };
+}
+
+// Ejecuta una escritura hacia Supabase en segundo plano; si falla (sin conexión,
+// etc.) avisa con un toast pero no revierte la caché local ni bloquea al usuario.
+function sincronizar(promesa, contexto) {
+  promesa.then(({ error }) => {
+    if (error) {
+      console.error(contexto, error);
+      if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
     }
-  },
-  _write(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
+  }).catch((e) => {
+    console.error(contexto, e);
+    if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
+  });
+}
+
+const DB = {
+  _cache: { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], cierres: [] },
+
+  // Carga completa desde Supabase — se llama una vez al iniciar sesión, antes de
+  // mostrar cualquier dato. Lanza si falla (el llamador debe mostrar "sin conexión").
+  async cargarTodoDesdeSupabase() {
+    const [rd, rp, ri, rg, re, rc] = await Promise.all([
+      supabaseClient.from('deudas').select('*'),
+      supabaseClient.from('pagos').select('*'),
+      supabaseClient.from('ingresos').select('*'),
+      supabaseClient.from('gastos').select('*'),
+      supabaseClient.from('empresas').select('*'),
+      supabaseClient.from('cierres').select('*'),
+    ]);
+    for (const r of [rd, rp, ri, rg, re, rc]) if (r.error) throw r.error;
+    this._cache.deudas = rd.data.map(rowToDeuda);
+    this._cache.pagos = rp.data.map(rowToPago);
+    this._cache.ingresos = ri.data.map(rowToIngreso);
+    this._cache.gastos = rg.data.map(rowToGasto);
+    this._cache.empresas = re.data.map(r => r.nombre).sort((a, b) => a.localeCompare(b));
+    this._cache.cierres = rc.data.map(rowToCierre);
   },
 
-  getDeudas() { return this._read(STORAGE_KEYS.deudas, []); },
-  saveDeudas(list) { this._write(STORAGE_KEYS.deudas, list); },
-  getDeuda(id) { return this.getDeudas().find(d => d.id === id) || null; },
+  // ---------- Deudas ----------
+  getDeudas() { return [...this._cache.deudas]; },
+  saveDeudas(list) {
+    const antes = new Set(this._cache.deudas.map(d => d.id));
+    const ahora = new Set(list.map(d => d.id));
+    this._cache.deudas = list;
+    const aBorrar = [...antes].filter(id => !ahora.has(id));
+    if (aBorrar.length) sincronizar(supabaseClient.from('deudas').delete().in('id', aBorrar), 'saveDeudas:delete');
+    if (list.length) sincronizar(supabaseClient.from('deudas').upsert(list.map(deudaToRow)), 'saveDeudas:upsert');
+  },
+  getDeuda(id) { return this._cache.deudas.find(d => d.id === id) || null; },
   addDeuda(deuda) {
-    const list = this.getDeudas();
     const nueva = {
-      id: Utils.uid(),
-      empresa: '',
-      detalle: '',
-      icono: '📌',
-      tipo: 'recurrente',
-      cuotasTotales: null,
-      valorCuota: 0,
-      cuotasPagadasBase: 0,
-      fechaInicio: Utils.monthKey(),
-      activa: true,
-      fechaArchivo: null,
-      notas: '',
-      fotoId: null,
-      creadoEn: new Date().toISOString(),
+      id: Utils.uid(), empresa: '', detalle: '', icono: '📌', tipo: 'recurrente',
+      cuotasTotales: null, valorCuota: 0, cuotasPagadasBase: 0, fechaInicio: Utils.monthKey(),
+      activa: true, fechaArchivo: null, notas: '', fotoId: null, creadoEn: new Date().toISOString(),
       ...deuda,
     };
-    list.push(nueva);
-    this.saveDeudas(list);
+    this._cache.deudas.push(nueva);
+    sincronizar(supabaseClient.from('deudas').insert(deudaToRow(nueva)), 'addDeuda');
     return nueva;
   },
   updateDeuda(id, patch) {
-    const list = this.getDeudas();
-    const idx = list.findIndex(d => d.id === id);
+    const idx = this._cache.deudas.findIndex(d => d.id === id);
     if (idx === -1) return null;
-    list[idx] = { ...list[idx], ...patch };
-    this.saveDeudas(list);
-    return list[idx];
+    this._cache.deudas[idx] = { ...this._cache.deudas[idx], ...patch };
+    sincronizar(supabaseClient.from('deudas').update(deudaToRow(this._cache.deudas[idx])).eq('id', id), 'updateDeuda');
+    return this._cache.deudas[idx];
   },
   deleteDeuda(id) {
     const deuda = this.getDeuda(id);
-    this.saveDeudas(this.getDeudas().filter(d => d.id !== id));
-    this.savePagos(this.getPagos().filter(p => p.deudaId !== id));
+    this._cache.deudas = this._cache.deudas.filter(d => d.id !== id);
+    this._cache.pagos = this._cache.pagos.filter(p => p.deudaId !== id);
+    sincronizar(supabaseClient.from('deudas').delete().eq('id', id), 'deleteDeuda');
     if (deuda && deuda.fotoId && typeof Photos !== 'undefined') Photos.delete(deuda.fotoId);
   },
   getDeudasArchivadas() {
@@ -122,58 +199,66 @@ const DB = {
   },
 
   // ---------- Maestro de Empresas ----------
-  // Se guarda como lista propia, pero además se auto-completa con cualquier empresa
-  // que ya exista en las deudas (por si viene de un respaldo antiguo o se creó a mano).
   getEmpresas() {
-    const stored = this._read(STORAGE_KEYS.empresas, null);
-    const enUso = [...new Set(this.getDeudas().map(d => d.empresa).filter(Boolean))];
-    if (stored === null) {
-      const inicial = enUso.sort((a, b) => a.localeCompare(b));
-      this.saveEmpresas(inicial);
-      return inicial;
-    }
-    const combinado = Array.from(new Set([...stored, ...enUso])).sort((a, b) => a.localeCompare(b));
-    if (combinado.length !== stored.length) this.saveEmpresas(combinado);
+    const enUso = [...new Set(this._cache.deudas.map(d => d.empresa).filter(Boolean))];
+    const combinado = Array.from(new Set([...this._cache.empresas, ...enUso])).sort((a, b) => a.localeCompare(b));
     return combinado;
   },
-  saveEmpresas(list) { this._write(STORAGE_KEYS.empresas, Array.from(new Set(list.filter(Boolean)))); },
+  saveEmpresas(list) {
+    const clean = Array.from(new Set(list.filter(Boolean)));
+    const antes = new Set(this._cache.empresas);
+    const ahora = new Set(clean);
+    this._cache.empresas = clean.sort((a, b) => a.localeCompare(b));
+    const aBorrar = [...antes].filter(n => !ahora.has(n));
+    if (aBorrar.length) sincronizar(supabaseClient.from('empresas').delete().in('nombre', aBorrar), 'saveEmpresas:delete');
+    if (clean.length) sincronizar(supabaseClient.from('empresas').upsert(clean.map(nombre => ({ nombre }))), 'saveEmpresas:upsert');
+  },
   addEmpresa(nombre) {
     nombre = (nombre || '').trim();
     if (!nombre) return;
     const list = this.getEmpresas();
-    if (!list.includes(nombre)) this.saveEmpresas([...list, nombre].sort((a, b) => a.localeCompare(b)));
+    if (!list.includes(nombre)) this.saveEmpresas([...list, nombre]);
   },
   renameEmpresa(oldName, newName) {
     newName = (newName || '').trim();
     const list = this.getEmpresas();
     if (!newName || oldName === newName || !list.includes(oldName)) return;
     this.saveEmpresas([...list.filter(e => e !== oldName), newName]);
-    this.saveDeudas(this.getDeudas().map(d => d.empresa === oldName ? { ...d, empresa: newName } : d));
+    this.saveDeudas(this._cache.deudas.map(d => d.empresa === oldName ? { ...d, empresa: newName } : d));
   },
   deleteEmpresa(nombre) {
     this.saveEmpresas(this.getEmpresas().filter(e => e !== nombre));
   },
 
-  getPagos() { return this._read(STORAGE_KEYS.pagos, []); },
-  savePagos(list) { this._write(STORAGE_KEYS.pagos, list); },
-  getPago(deudaId, mes) {
-    return this.getPagos().find(p => p.deudaId === deudaId && p.mes === mes) || null;
+  // ---------- Pagos ----------
+  getPagos() { return [...this._cache.pagos]; },
+  savePagos(list) {
+    const antes = new Set(this._cache.pagos.map(p => p.id));
+    const ahora = new Set(list.map(p => p.id));
+    this._cache.pagos = list;
+    const aBorrar = [...antes].filter(id => !ahora.has(id));
+    if (aBorrar.length) sincronizar(supabaseClient.from('pagos').delete().in('id', aBorrar), 'savePagos:delete');
+    if (list.length) sincronizar(supabaseClient.from('pagos').upsert(list.map(pagoToRow)), 'savePagos:upsert');
   },
-  getPagosDeMes(mes) { return this.getPagos().filter(p => p.mes === mes); },
+  getPago(deudaId, mes) {
+    return this._cache.pagos.find(p => p.deudaId === deudaId && p.mes === mes) || null;
+  },
+  getPagosDeMes(mes) { return this._cache.pagos.filter(p => p.mes === mes); },
   getPagosDeDeuda(deudaId) {
-    return this.getPagos().filter(p => p.deudaId === deudaId).sort((a, b) => Utils.compareMonth(a.mes, b.mes));
+    return this._cache.pagos.filter(p => p.deudaId === deudaId).sort((a, b) => Utils.compareMonth(a.mes, b.mes));
   },
   upsertPago(pago) {
-    const list = this.getPagos();
-    const idx = list.findIndex(p => p.deudaId === pago.deudaId && p.mes === pago.mes);
+    const idx = this._cache.pagos.findIndex(p => p.deudaId === pago.deudaId && p.mes === pago.mes);
+    let final;
     if (idx === -1) {
-      pago.id = Utils.uid();
-      list.push(pago);
+      final = { ...pago, id: pago.id || Utils.uid() };
+      this._cache.pagos.push(final);
     } else {
-      list[idx] = { ...list[idx], ...pago };
+      final = { ...this._cache.pagos[idx], ...pago };
+      this._cache.pagos[idx] = final;
     }
-    this.savePagos(list);
-    return this.getPago(pago.deudaId, pago.mes);
+    sincronizar(supabaseClient.from('pagos').upsert(pagoToRow(final)), 'upsertPago');
+    return this.getPago(final.deudaId, final.mes);
   },
 
   // Cuota acumulada de una deuda hasta (e incluyendo) el mes indicado, considerando
@@ -189,7 +274,7 @@ const DB = {
   // Genera (si no existen) los registros de pago del mes para todas las deudas activas,
   // arrastrando el gasto esperado y el acumulado de cuotas del mes anterior. Idempotente.
   ensureMes(mes) {
-    const deudas = this.getDeudas().filter(d => d.activa);
+    const deudas = this._cache.deudas.filter(d => d.activa);
     const pagos = this.getPagos();
     let changed = false;
     deudas.forEach(d => {
@@ -227,37 +312,50 @@ const DB = {
     });
   },
 
-  getIngresos() { return this._read(STORAGE_KEYS.ingresos, []); },
-  saveIngresos(list) { this._write(STORAGE_KEYS.ingresos, list); },
-  getIngresosDeMes(mes) { return this.getIngresos().filter(i => i.mes === mes); },
+  // ---------- Ingresos ----------
+  getIngresos() { return [...this._cache.ingresos]; },
+  saveIngresos(list) {
+    const antes = new Set(this._cache.ingresos.map(i => i.id));
+    const ahora = new Set(list.map(i => i.id));
+    this._cache.ingresos = list;
+    const aBorrar = [...antes].filter(id => !ahora.has(id));
+    if (aBorrar.length) sincronizar(supabaseClient.from('ingresos').delete().in('id', aBorrar), 'saveIngresos:delete');
+    if (list.length) sincronizar(supabaseClient.from('ingresos').upsert(list.map(ingresoToRow)), 'saveIngresos:upsert');
+  },
+  getIngresosDeMes(mes) { return this._cache.ingresos.filter(i => i.mes === mes); },
   addIngreso(ingreso) {
-    const list = this.getIngresos();
     const nuevo = { id: Utils.uid(), fuente: '', monto: 0, mes: Utils.monthKey(), tipo: 'fijo', notas: '', ...ingreso };
-    list.push(nuevo);
-    this.saveIngresos(list);
+    this._cache.ingresos.push(nuevo);
+    sincronizar(supabaseClient.from('ingresos').insert(ingresoToRow(nuevo)), 'addIngreso');
     return nuevo;
   },
   updateIngreso(id, patch) {
-    const list = this.getIngresos();
-    const idx = list.findIndex(i => i.id === id);
+    const idx = this._cache.ingresos.findIndex(i => i.id === id);
     if (idx === -1) return null;
-    list[idx] = { ...list[idx], ...patch };
-    this.saveIngresos(list);
-    return list[idx];
+    this._cache.ingresos[idx] = { ...this._cache.ingresos[idx], ...patch };
+    sincronizar(supabaseClient.from('ingresos').update(ingresoToRow(this._cache.ingresos[idx])).eq('id', id), 'updateIngreso');
+    return this._cache.ingresos[idx];
   },
   deleteIngreso(id) {
-    this.saveIngresos(this.getIngresos().filter(i => i.id !== id));
+    this._cache.ingresos = this._cache.ingresos.filter(i => i.id !== id);
+    sincronizar(supabaseClient.from('ingresos').delete().eq('id', id), 'deleteIngreso');
   },
 
   // ---------- Gastos (consumo propio / por rendir a la empresa) ----------
-  getGastos() { return this._read(STORAGE_KEYS.gastos, []); },
-  saveGastos(list) { this._write(STORAGE_KEYS.gastos, list); },
-  getGasto(id) { return this.getGastos().find(g => g.id === id) || null; },
+  getGastos() { return [...this._cache.gastos]; },
+  saveGastos(list) {
+    const antes = new Set(this._cache.gastos.map(g => g.id));
+    const ahora = new Set(list.map(g => g.id));
+    this._cache.gastos = list;
+    const aBorrar = [...antes].filter(id => !ahora.has(id));
+    if (aBorrar.length) sincronizar(supabaseClient.from('gastos').delete().in('id', aBorrar), 'saveGastos:delete');
+    if (list.length) sincronizar(supabaseClient.from('gastos').upsert(list.map(gastoToRow)), 'saveGastos:upsert');
+  },
+  getGasto(id) { return this._cache.gastos.find(g => g.id === id) || null; },
   getGastosDeMes(mes, tipo) {
-    return this.getGastos().filter(g => g.fecha.slice(0, 7) === mes && (!tipo || g.tipo === tipo));
+    return this._cache.gastos.filter(g => g.fecha.slice(0, 7) === mes && (!tipo || g.tipo === tipo));
   },
   addGasto(gasto) {
-    const list = this.getGastos();
     const nuevo = {
       id: Utils.uid(),
       tipo: 'consumo', // 'consumo' | 'rendir'
@@ -274,34 +372,52 @@ const DB = {
       creadoEn: new Date().toISOString(),
       ...gasto,
     };
-    list.push(nuevo);
-    this.saveGastos(list);
+    this._cache.gastos.push(nuevo);
+    sincronizar(supabaseClient.from('gastos').insert(gastoToRow(nuevo)), 'addGasto');
     return nuevo;
   },
   updateGasto(id, patch) {
-    const list = this.getGastos();
-    const idx = list.findIndex(g => g.id === id);
+    const idx = this._cache.gastos.findIndex(g => g.id === id);
     if (idx === -1) return null;
-    list[idx] = { ...list[idx], ...patch };
-    this.saveGastos(list);
-    return list[idx];
+    this._cache.gastos[idx] = { ...this._cache.gastos[idx], ...patch };
+    sincronizar(supabaseClient.from('gastos').update(gastoToRow(this._cache.gastos[idx])).eq('id', id), 'updateGasto');
+    return this._cache.gastos[idx];
   },
   deleteGasto(id) {
     const gasto = this.getGasto(id);
-    this.saveGastos(this.getGastos().filter(g => g.id !== id));
+    this._cache.gastos = this._cache.gastos.filter(g => g.id !== id);
+    sincronizar(supabaseClient.from('gastos').delete().eq('id', id), 'deleteGasto');
     if (gasto) {
       if (gasto.fotoBoletaId) Photos.delete(gasto.fotoBoletaId);
       if (gasto.fotoComprobanteId) Photos.delete(gasto.fotoComprobanteId);
     }
   },
 
+  // ---------- Meta (local al dispositivo: tema, mes actual, preferencias) ----------
   getMeta() { return this._read(STORAGE_KEYS.meta, {}); },
   setMeta(patch) { this._write(STORAGE_KEYS.meta, { ...this.getMeta(), ...patch }); },
+  _read(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+      console.error('Error leyendo', key, e);
+      return fallback;
+    }
+  },
+  _write(key, value) { localStorage.setItem(key, JSON.stringify(value)); },
 
   // ---------- Cierre de mes (arrastre de saldo al mes siguiente) ----------
-  getCierres() { return this._read(STORAGE_KEYS.cierres, []); },
-  saveCierres(list) { this._write(STORAGE_KEYS.cierres, list); },
-  getCierre(mes) { return this.getCierres().find(c => c.mes === mes) || null; },
+  getCierres() { return [...this._cache.cierres]; },
+  saveCierres(list) {
+    const antes = new Set(this._cache.cierres.map(c => c.mes));
+    const ahora = new Set(list.map(c => c.mes));
+    this._cache.cierres = list;
+    const aBorrar = [...antes].filter(mes => !ahora.has(mes));
+    if (aBorrar.length) sincronizar(supabaseClient.from('cierres').delete().in('mes', aBorrar), 'saveCierres:delete');
+    if (list.length) sincronizar(supabaseClient.from('cierres').upsert(list.map(cierreToRow)), 'saveCierres:upsert');
+  },
+  getCierre(mes) { return this._cache.cierres.find(c => c.mes === mes) || null; },
 
   // Saldo con el que parte un mes: lo que sobró del mes anterior (nunca negativo;
   // si no sobró nada, o el mes anterior no está cerrado, parte en $0).
@@ -339,7 +455,7 @@ const DB = {
 
   exportAll() {
     return JSON.stringify({
-      version: 4,
+      version: 5,
       exportadoEn: new Date().toISOString(),
       deudas: this.getDeudas(),
       pagos: this.getPagos(),
@@ -365,28 +481,36 @@ const DB = {
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
     if (data.biometric && typeof Biometric !== 'undefined') Biometric.setConfig(data.biometric);
   },
-  resetAll() {
-    localStorage.removeItem(STORAGE_KEYS.deudas);
-    localStorage.removeItem(STORAGE_KEYS.pagos);
-    localStorage.removeItem(STORAGE_KEYS.ingresos);
-    localStorage.removeItem(STORAGE_KEYS.gastos);
+
+  // Borra TODO: tanto la nube (Supabase, afecta a cualquiera con sesión) como las
+  // preferencias/seguridad locales de este dispositivo. Es async porque espera a
+  // que las tablas se vacíen de verdad antes de continuar.
+  async resetAll() {
+    const borrarTabla = (tabla, columna, valorImposible) =>
+      supabaseClient.from(tabla).delete().neq(columna, valorImposible);
+    const resultados = await Promise.all([
+      borrarTabla('pagos', 'id', '00000000-0000-0000-0000-000000000000'),
+      borrarTabla('gastos', 'id', '00000000-0000-0000-0000-000000000000'),
+      borrarTabla('deudas', 'id', '00000000-0000-0000-0000-000000000000'),
+      borrarTabla('ingresos', 'id', '00000000-0000-0000-0000-000000000000'),
+      borrarTabla('empresas', 'nombre', '__ninguna__'),
+      borrarTabla('cierres', 'mes', '__ninguno__'),
+    ]);
+    for (const r of resultados) if (r.error) throw r.error;
+    this._cache = { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], cierres: [] };
     localStorage.removeItem(STORAGE_KEYS.meta);
-    localStorage.removeItem(STORAGE_KEYS.empresas);
-    localStorage.removeItem(STORAGE_KEYS.cierres);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
     if (typeof Biometric !== 'undefined') { Biometric.disable(); localStorage.removeItem(Biometric.KEY); }
-    if (window.indexedDB) indexedDB.deleteDatabase('ff_photos_db');
   },
 
-  // Un dispositivo nuevo arranca 100% vacío (sin deudas, ingresos ni gastos de ejemplo).
-  // Si el dispositivo ya tenía datos (meta.seeded), esta función no toca nada.
+  // Marca de primera vez en este dispositivo (ya no crea datos de ejemplo: la nube
+  // parte vacía o con lo que ya hayan cargado otros dispositivos).
   seedIfEmpty() {
     if (this.getMeta().seeded) return;
     this.setMeta({ seeded: true, mesActual: Utils.monthKey() });
   },
 
-  // Migraciones puntuales sobre datos ya existentes en el dispositivo (no afectan un
-  // dispositivo nuevo, que no tendrá nada que migrar).
+  // Migraciones puntuales sobre datos ya existentes (idempotente).
   migrar() {
     const meta = this.getMeta();
     if (!meta.migracion_totol_v1) {

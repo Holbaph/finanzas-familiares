@@ -1,7 +1,7 @@
 {
   "name": "Finanzas Familiares",
   "short_name": "Finanzas",
-  "description": "Control de deudas, cuotas e ingresos familiares — 100% local y offline.",
+  "description": "Control de deudas, cuotas, gastos e ingresos familiares, sincronizado en la nube con tu propio proyecto Supabase.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

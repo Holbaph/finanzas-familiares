@@ -1,23 +1,10 @@
-// photos.js — almacenamiento de fotos (boletas / comprobantes) en IndexedDB.
-// Se guardan como Blob comprimido; localStorage solo guarda el id de referencia.
+// photos.js — almacenamiento de fotos (boletas / comprobantes / deudas) en Supabase
+// Storage (bucket privado "fotos"), para que estén disponibles desde cualquier
+// dispositivo con sesión iniciada. Se comprimen antes de subir para no gastar espacio
+// ni datos móviles de más.
 
 const Photos = {
-  _dbPromise: null,
-
-  _open() {
-    if (this._dbPromise) return this._dbPromise;
-    this._dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open('ff_photos_db', 1);
-      req.onupgradeneeded = () => {
-        req.result.createObjectStore('photos');
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    return this._dbPromise;
-  },
-
-  // Redimensiona/comprime una foto (File/Blob) antes de guardarla, para no saturar el almacenamiento.
+  // Redimensiona/comprime una foto (File/Blob) antes de guardarla.
   async _compress(file, maxDim = 1280, quality = 0.72) {
     const bitmap = await createImageBitmap(file).catch(() => null);
     if (!bitmap) return file;
@@ -37,24 +24,19 @@ const Photos = {
 
   async save(id, file) {
     const blob = await this._compress(file);
-    const db = await this._open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('photos', 'readwrite');
-      tx.objectStore('photos').put(blob, id);
-      tx.oncomplete = () => resolve(id);
-      tx.onerror = () => reject(tx.error);
+    const { error } = await supabaseClient.storage.from('fotos').upload(id, blob, {
+      upsert: true,
+      contentType: 'image/jpeg',
     });
+    if (error) throw error;
+    return id;
   },
 
   async getBlob(id) {
     if (!id) return null;
-    const db = await this._open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('photos', 'readonly');
-      const req = tx.objectStore('photos').get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    const { data, error } = await supabaseClient.storage.from('fotos').download(id);
+    if (error) { console.error('Photos.getBlob', error); return null; }
+    return data;
   },
 
   async getURL(id) {
@@ -64,12 +46,7 @@ const Photos = {
 
   async delete(id) {
     if (!id) return;
-    const db = await this._open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('photos', 'readwrite');
-      tx.objectStore('photos').delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    const { error } = await supabaseClient.storage.from('fotos').remove([id]);
+    if (error) console.error('Photos.delete', error);
   },
 };

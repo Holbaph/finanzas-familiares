@@ -570,7 +570,7 @@ html.locked-boot #app { visibility: hidden; }
   justify-content: center;
   background: var(--bg);
 }
-.lock-overlay.visible, html.locked-boot .lock-overlay { display: flex; }
+.lock-overlay.visible, html.locked-boot #lockOverlay { display: flex; }
 .lock-box {
   width: 100%;
   max-width: 320px;
@@ -593,6 +593,12 @@ html.locked-boot #app { visibility: hidden; }
 }
 .lock-error { color: var(--red); font-size: 13px; margin: 0 0 12px; }
 .lock-error.hidden { display: none; }
+.login-field {
+  font-size: 16px;
+  text-align: left;
+  letter-spacing: normal;
+  margin: 0;
+}
 
 /* ---------- Selector de temas ---------- */
 .theme-grid {

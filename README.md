@@ -1,84 +1,76 @@
 # Finanzas Familiares
 
 App web instalable (PWA) para llevar el control de deudas, cuotas, créditos, gastos e ingresos.
-**Funciona 100% offline y todos los datos quedan guardados solo en tu iPhone** (localStorage +
-IndexedDB para fotos) — no hay backend, no hay nube, no hay cuentas.
+**Tus datos viven en tu propio proyecto de Supabase** (Postgres + Auth + Storage) — no en un
+servidor de terceros ni en la nube de nadie más — y se sincronizan entre todos tus dispositivos
+(iPhone, computador, tablet) con la misma cuenta. **Necesita internet para funcionar.**
 
 Publicada en: **https://holbaph.github.io/finanzas-familiares/**
 
 ## Qué incluye
 
+- **Cuenta compartida por hogar**: inicias sesión con correo y contraseña (las cuentas se crean
+  tú mismo desde el panel de Supabase, no hay registro público). Cualquiera con una cuenta ve y
+  edita los mismos datos — pensado para una familia, no para separar información por persona.
+- **Bloqueo local con PIN (4 dígitos) y/o Face ID / Touch ID**: una segunda capa, aparte del
+  login, para que nadie que tome el teléfono (con la sesión ya iniciada) entre a la app. El PIN
+  se autodesbloquea al escribir el último dígito; Face ID se intenta solo al abrir. Si lo
+  olvidas, hay una opción en la pantalla de bloqueo para quitarlo **sin tocar tus datos**
+  (viven en la nube, no en el PIN).
+  - **Tiempo de gracia**: en Ajustes → Seguridad eliges cuánto debe pasar desde que sales de la
+    app para que vuelva a pedir acceso — Inmediatamente, 30 segundos, 1 minuto (por defecto), 5
+    o 15 minutos. Igual en iPhone, computador o tablet.
 - **Resumen del mes**: ingresos, gastos comprometidos, balance disponible, pendiente por pagar,
   progreso de pagos y desglose por empresa.
-- **Deudas**: agrupadas por empresa (la empresa hace de categoría — no hay un campo aparte para
-  eso), con ícono a elección, tipo "gasto recurrente" (agua, luz, suscripciones...) o "crédito en
-  cuotas" (con N° total de cuotas, cuotas pagadas y por pagar, barra de progreso). Al marcar una
-  cuota como pagada, el acumulado avanza solo y detecta automáticamente cuándo un crédito queda
-  "Completa".
+- **Deudas**: agrupadas por empresa (la empresa hace de categoría), con ícono a elección, tipo
+  "gasto recurrente" (agua, luz, suscripciones...) o "crédito en cuotas" (con N° total de
+  cuotas, cuotas pagadas y por pagar, barra de progreso). Al marcar una cuota como pagada, el
+  acumulado avanza solo y detecta automáticamente cuándo un crédito queda "Completa".
   - **Archivar / pagadas**: cualquier deuda se puede archivar (cuenta cerrada o saldada) sin
-    perder su historial. Las activas son las únicas que aparecen en la lista principal; las
-    archivadas se ven aparte en "Archivadas / pagadas", con la fecha en que se archivaron y el
-    historial completo de pagos (con fecha de cada pago).
-  - **Empresas como maestro**: se eligen desde una lista (no hay que escribirlas de nuevo cada
-    vez) y se administran desde Ajustes → Empresas, donde se pueden agregar, renombrar (renombra
-    también todas las deudas que ya la usaban) o quitar.
-  - **Foto (boleta, producto, contrato...)**: opcional, al crear o editar una deuda. Se ve como
-    miniatura en la tarjeta y en el detalle, y se puede tocar para verla ampliada.
-  - Al filtrar Deudas por una empresa, arriba de la lista aparece cuántas deudas tienes con ella
-    y el total a pagar ese mes entre todas. Sin filtro, cada grupo de empresa en la lista ya
-    muestra su propio total al lado del nombre.
+    perder su historial, con la fecha en que se archivó.
+  - **Empresas como maestro**: se eligen desde una lista y se administran desde Ajustes →
+    Empresas (agregar, renombrar, quitar).
+  - **Foto (boleta, producto, contrato...)**: opcional, tocable para verla ampliada.
+  - Totales por empresa: al filtrar aparece cuánto debes a esa empresa; sin filtro, cada grupo
+    ya muestra su propio total.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
-- **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo.
-  Cada uno tiene:
-  - **Foto de la boleta** (cámara o galería) como respaldo de lo consumido.
-  - Estados **Pendiente → Rendido → Reembolsado**, para saber qué ya entregaste a la empresa
-    y qué todavía te deben.
-  - **Foto del comprobante bancario** (el retiro que hiciste o el depósito que te hizo la
-    empresa) para dejar registro de cuándo se cerró cada rendición.
-  Las fotos se guardan comprimidas en el propio teléfono (IndexedDB) — nunca se suben a
-  ningún servidor. Cualquier foto (boleta o comprobante) se puede tocar para verla en
-  pantalla completa y revisar el detalle.
+- **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo,
+  con foto de la boleta, estados **Pendiente → Rendido → Reembolsado**, y foto del comprobante
+  bancario del reembolso.
 - **Ingresos**: por fuente (sueldo, bono, etc.), fijos o variables, por mes.
-- **Bloqueo con PIN (4 dígitos) y/o Face ID / Touch ID**: para que nadie más abra la app desde
-  el teléfono. El PIN se autodesbloquea al escribir el último dígito; si activas Face ID/Touch
-  ID, se intenta automáticamente al abrir. Si no puedes ingresar, hay una opción en la misma
-  pantalla de bloqueo para borrar todo y empezar de nuevo (es la única forma de recuperar el
-  acceso, ya que ni el PIN ni los datos de Face ID se guardan en texto plano ni se pueden leer).
-  - **Tiempo de gracia**: en Ajustes → Seguridad eliges cuánto debe pasar desde que sales de la
-    app (cambias de app, apagas la pantalla) para que vuelva a pedir acceso — Inmediatamente,
-    30 segundos, 1 minuto (por defecto), 5 o 15 minutos. Si vuelves antes de ese tiempo, no
-    te pide nada de nuevo. Funciona igual en iPhone, computador o tablet.
 - **Temas**: Automático, Claro, Oscuro, Rosa, Rosa Noche y Lavanda, en Ajustes → Apariencia.
-- **Navegación por mes**: al pasar a un mes nuevo, la app genera automáticamente el gasto
-  esperado de cada deuda activa (igual que arrastrar las columnas de tu planilla).
-- **Cierre de mes**: desde el Resumen, botón "Cerrar [mes]" — calcula lo que sobró (ingresos
-  menos gastos, nunca negativo) y lo traslada como saldo inicial del mes siguiente. Si no sobró
-  nada, el mes siguiente simplemente parte en $0 hasta que llegue el próximo ingreso. Se puede
-  recalcular o deshacer en cualquier momento. La app recuerda cerrar el mes anterior mientras
-  estés entre los días 1 y 5 del mes en curso.
-- **Informe en Excel**: Ajustes → Exportar informe a Excel genera un `.xlsx` real (con hojas
-  Resumen Mensual, Deudas, Historial de Pagos, Ingresos, Gastos - Consumo y Gastos - Por Rendir)
-  para revisar y analizar todo fuera de la app. Se genera enteramente en el teléfono, sin
-  ninguna librería externa ni conexión — es solo para lectura, no reemplaza al respaldo `.json`
-  (ese sí se puede volver a importar a la app).
-- **Ajustes**: exportar/importar un respaldo en `.json`, y borrar todos los datos.
+- **Cierre de mes**: calcula lo que sobró (nunca negativo) y lo traslada como saldo inicial del
+  mes siguiente; se puede ajustar a mano, recalcular o deshacer.
+- **Informe en Excel**: Ajustes → Exportar informe a Excel genera un `.xlsx` real con todo
+  (Resumen Mensual, Deudas, Historial de Pagos, Ingresos, Gastos), solo para revisar/analizar.
+- **Respaldo `.json`**: exporta/importa un archivo con todos tus datos (excepto fotos) como
+  copia de seguridad extra, además de la nube.
 
-Un dispositivo nuevo (o recién reinstalado) arranca **completamente vacío** — sin deudas,
-ingresos ni gastos de ejemplo — listo para que cargues lo tuyo o importes un respaldo.
+## Configurar Supabase (una sola vez)
 
-> Nota sobre el respaldo: el archivo `.json` que exportas desde Ajustes guarda deudas, ingresos,
-> gastos, el tema/mes elegido y la configuración del PIN — **todo excepto las fotos**, que viven
-> aparte en IndexedDB para no hacer gigante el archivo. Si cambias de teléfono, revisa que las
-> fotos importantes sigan disponibles (o guárdalas por separado) antes de borrar datos del
-> dispositivo anterior.
+La app necesita un proyecto de Supabase propio para guardar los datos. Yo no puedo crearlo por
+ti (requiere tu cuenta), pero dejé todo listo para que sea rápido:
+
+1. Crea una cuenta gratis en **https://supabase.com** y un proyecto nuevo.
+2. Ve a **SQL Editor → New query**, pega el contenido completo de
+   [`supabase/schema.sql`](supabase/schema.sql) y presiona **Run**. Esto crea todas las tablas,
+   los permisos (RLS) y el espacio para fotos.
+3. Ve a **Authentication → Users → Add user** y crea una cuenta para ti (y otra para tu pareja,
+   si van a compartir la app), con correo y contraseña. No actives el registro público — no
+   hace falta, las cuentas se crean solo desde aquí.
+4. Ve a **Project Settings → API** y copia la **Project URL** y la **anon public key**.
+5. Abre [`js/supabase-config.js`](js/supabase-config.js) y reemplaza `SUPABASE_URL` y
+   `SUPABASE_ANON_KEY` con esos dos valores. Guarda y sube el cambio (`git add`, `git commit`,
+   `git push`) para que quede publicado.
+
+Esos dos valores son públicos por diseño (los usa cualquiera que abra la app en su navegador);
+la seguridad real la dan las políticas de la base de datos (RLS) del script SQL — sin haber
+iniciado sesión, esas claves no permiten leer ni escribir nada.
 
 ## ⚠️ Importante: usa siempre el ícono de la pantalla de inicio
 
-Para evitar que el teléfono guarde tus datos en dos lugares distintos (que es lo que hace parecer
-que "se perdieron" cosas), **entra siempre por el ícono que agregaste a tu pantalla de inicio**,
-nunca por una pestaña de Safari o un buscador. Si tienes pestañas de Safari abiertas con la URL
-de la app, ciérralas — son una copia visualmente idéntica pero pueden comportarse como un
-contexto distinto en algunas versiones de iOS.
+Entra siempre por el ícono que agregaste a tu pantalla de inicio, no por una pestaña de Safari
+suelta — evita confusiones de sesión entre distintos contextos del navegador.
 
 ## Cómo instalarla en tu iPhone
 
@@ -88,41 +80,39 @@ contexto distinto en algunas versiones de iOS.
    https://holbaph.github.io/finanzas-familiares/
    ```
 
-2. Toca el botón compartir (el cuadrado con la flecha hacia arriba) y elige
+2. Inicia sesión con el correo y contraseña que creaste en Supabase.
+3. Toca el botón compartir (el cuadrado con la flecha hacia arriba) y elige
    **"Agregar a pantalla de inicio"**.
+4. Abre la app **desde ese ícono** — se ve a pantalla completa, como una app nativa. Necesitas
+   internet cada vez que la uses (los datos viven en Supabase, no en el teléfono).
 
-3. Abre la app **desde ese ícono** (no desde Safari) — se abre a pantalla completa, como una
-   app nativa. A partir de ahí funciona 100% sin conexión, sin importar en qué red estés ni si
-   tu computador está prendido o no.
-
-Esta publicación en GitHub Pages es permanente (no vence ni depende de tu red o computador):
-solo entrega los archivos de la app la primera vez, igual que una tienda de aplicaciones. Una
-vez instalada, la app y tus datos son enteramente tuyos y locales.
+En un computador o tablet, el mismo enlace y la misma cuenta muestran exactamente los mismos
+datos — no hace falta reinstalar nada especial, solo abrir la URL e iniciar sesión.
 
 ## Respaldar tus datos
 
-Ve a **Ajustes → Exportar respaldo** de vez en cuando y guarda el archivo `.json` (por ejemplo,
-enviándotelo por AirDrop o correo). Si alguna vez cambias de teléfono o borras la app, puedes
-recuperar todo con **Ajustes → Importar respaldo**. Ajustes muestra siempre el nombre y la fecha
-del último respaldo exportado o importado, para tener esa referencia a mano.
-
-> Nota: la app **no puede** recordar la ubicación de ese archivo en tu teléfono ni volver a leerlo
-> sola al abrirse — Safari no permite que ninguna página web acceda al sistema de archivos por su
-> cuenta, por seguridad. Esto no hace falta de todos modos: la app ya guarda todos tus datos por
-> sí sola en el propio dispositivo (no necesitas importar el `.json` cada vez que la abres); el
-> archivo es solo para respaldo o para pasar los datos a otro teléfono.
+Aparte de que los datos ya viven en Supabase (con su propio respaldo en la nube), puedes exportar
+una copia adicional: Ajustes → Exportar respaldo (`.json`). Sirve para tener una copia portátil
+o para revisar datos sin conexión a Supabase; para restaurar del todo, Ajustes → Importar
+respaldo vuelve a subir esos datos a la nube. Ajustes muestra el nombre y fecha del último
+respaldo exportado o importado. Este archivo **no incluye las fotos** (viven en Supabase
+Storage), y el PIN/Face ID que guarda son solo para *este* dispositivo, no se comparten.
 
 ## Estructura del proyecto
 
 ```
-index.html         Estructura de la app
-css/styles.css      Estilos (temas claro/oscuro/rosa/lavanda, diseño tipo iOS)
-js/core.js           Modelo de datos, localStorage, datos precargados de la planilla
-js/photos.js         Almacenamiento de fotos (boletas/comprobantes) en IndexedDB
-js/lock.js           Bloqueo con PIN (hash SHA-256, nunca texto plano)
-js/xlsx-writer.js     Generador de archivos .xlsx desde cero (sin librerías externas)
-js/app.js            Lógica de la interfaz, navegación y fix de viewport iOS
-manifest.json         Metadatos de instalación (PWA)
-sw.js                 Service Worker (cache offline)
-icons/                Íconos de la app
+index.html               Estructura de la app (login, bloqueo, vistas)
+css/styles.css            Estilos (temas claro/oscuro/rosa/lavanda, diseño tipo iOS)
+js/supabase-config.js      URL y anon key de TU proyecto de Supabase (editar acá)
+js/auth.js                 Login/logout con Supabase Auth
+js/core.js                 Caché en memoria + sincronización con Supabase (deudas, pagos,
+                            ingresos, gastos, empresas, cierres); "meta" queda local
+js/photos.js                Fotos (boletas/comprobantes/deudas) en Supabase Storage
+js/lock.js                  Bloqueo local con PIN/Face ID (hash SHA-256, nunca texto plano)
+js/xlsx-writer.js            Generador de archivos .xlsx desde cero (sin librerías externas)
+js/app.js                   Lógica de la interfaz, navegación, arranque (login → carga → app)
+manifest.json                Metadatos de instalación (PWA)
+sw.js                        Service Worker (cachea el cascarón estático, no los datos)
+supabase/schema.sql           Esquema completo para pegar en el SQL Editor de tu proyecto
+icons/                       Íconos de la app
 ```
