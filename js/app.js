@@ -591,7 +591,10 @@ function attachDeudaCardEvents(container) {
   container.querySelectorAll('[data-archivar-id]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      DB.archivarDeuda(btn.dataset.archivarId);
+      const idArchivar = btn.dataset.archivarId;
+      const pagoArchivar = DB.getPago(idArchivar, currentMonth);
+      if (pagoArchivar && !pagoArchivar.pagado) DB.marcarPago(idArchivar, currentMonth, true);
+      DB.archivarDeuda(idArchivar);
       renderAll();
       showToast('Deuda archivada');
     });
@@ -809,6 +812,8 @@ function openDeudaDetail(id) {
 
   const btnArchivar = document.getElementById('btnArchivarDeuda');
   if (btnArchivar) btnArchivar.addEventListener('click', () => {
+    const pagoActual = DB.getPago(id, currentMonth);
+    if (pagoActual && !pagoActual.pagado) DB.marcarPago(id, currentMonth, true);
     DB.archivarDeuda(id);
     closeSheet();
     renderAll();
