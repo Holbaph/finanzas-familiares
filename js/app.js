@@ -41,6 +41,12 @@ function ocultarOverlaysArranque() {
   });
 }
 
+// iOS Safari ignora "user-scalable=no": además de touch-action en el CSS, se anula el
+// gesto de pellizco para que la pantalla nunca quede ampliada.
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+  document.addEventListener(ev, e => e.preventDefault(), { passive: false })
+);
+
 async function boot() {
   applyTheme(DB.getMeta().tema || 'auto');
   wireLock();

@@ -63,6 +63,13 @@ html, body {
   height: 100%;
   height: -webkit-fill-available;
   overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Sin zoom por doble toque ni pellizco: en iPhone ese zoom descuadra la pantalla y los
+   botones quedan "corridos" (hay que tocar más abajo de donde se ven). */
+html, body, * {
+  touch-action: manipulation;
 }
 
 body {
