@@ -238,7 +238,7 @@ const DB = {
     this._cache.pagos = list;
     const aBorrar = [...antes].filter(id => !ahora.has(id));
     if (aBorrar.length) sincronizar(supabaseClient.from('pagos').delete().in('id', aBorrar), 'savePagos:delete');
-    if (list.length) sincronizar(supabaseClient.from('pagos').upsert(list.map(pagoToRow)), 'savePagos:upsert');
+    if (list.length) sincronizar(supabaseClient.from('pagos').upsert(list.map(pagoToRow), { onConflict: 'deuda_id,mes' }), 'savePagos:upsert');
   },
   getPago(deudaId, mes) {
     return this._cache.pagos.find(p => p.deudaId === deudaId && p.mes === mes) || null;
@@ -257,18 +257,50 @@ const DB = {
       final = { ...this._cache.pagos[idx], ...pago };
       this._cache.pagos[idx] = final;
     }
-    sincronizar(supabaseClient.from('pagos').upsert(pagoToRow(final)), 'upsertPago');
+    sincronizar(supabaseClient.from('pagos').upsert(pagoToRow(final), { onConflict: 'deuda_id,mes' }), 'upsertPago');
     return this.getPago(final.deudaId, final.mes);
   },
 
-  // Cuota acumulada de una deuda hasta (e incluyendo) el mes indicado, considerando
-  // la última cuota registrada estrictamente antes de ese mes.
+  // Cuotas pagadas de un crédito: las de antes de usar la app (base) + los meses marcados
+  // como pagados. Se calcula siempre desde el historial (no se arrastra de un mes al
+  // siguiente), así nunca queda desfasado aunque se pague en otro orden o se deshaga un pago.
+  _contarCuotas(deuda, mes, incluirMes) {
+    const pagados = this._cache.pagos.filter(p => {
+      if (p.deudaId !== deuda.id || !p.pagado) return false;
+      const cmp = Utils.compareMonth(p.mes, mes);
+      return incluirMes ? cmp <= 0 : cmp < 0;
+    }).length;
+    return Math.min((deuda.cuotasPagadasBase || 0) + pagados, deuda.cuotasTotales ?? Infinity);
+  },
+  // Hasta (e incluyendo) el mes indicado.
+  cuotasPagadasHasta(deudaId, mes) {
+    const deuda = this.getDeuda(deudaId);
+    return deuda ? this._contarCuotas(deuda, mes, true) : 0;
+  },
+  // Estrictamente antes del mes indicado.
   cuotaAcumuladaAntesDe(deudaId, mes) {
     const deuda = this.getDeuda(deudaId);
-    if (!deuda) return 0;
-    const historial = this.getPagosDeDeuda(deudaId).filter(p => Utils.compareMonth(p.mes, mes) < 0);
-    if (historial.length === 0) return deuda.cuotasPagadasBase || 0;
-    return historial[historial.length - 1].cuotaPagadaAcumulada ?? (deuda.cuotasPagadasBase || 0);
+    return deuda ? this._contarCuotas(deuda, mes, false) : 0;
+  },
+
+  // Deja el campo guardado "cuotaPagadaAcumulada" de cada pago de un crédito (o de todos
+  // si no se indica deudaId) igual al valor calculado. Devuelve cuántos pagos corrigió.
+  recalcularAcumulados(deudaId) {
+    const cambios = [];
+    this._cache.pagos.forEach((p, i) => {
+      if (deudaId && p.deudaId !== deudaId) return;
+      const deuda = this.getDeuda(p.deudaId);
+      if (!deuda || deuda.tipo !== 'cuotas') return;
+      const esperado = this._contarCuotas(deuda, p.mes, !!p.pagado);
+      if (p.cuotaPagadaAcumulada !== esperado) {
+        this._cache.pagos[i] = { ...p, cuotaPagadaAcumulada: esperado };
+        cambios.push(this._cache.pagos[i]);
+      }
+    });
+    if (cambios.length) {
+      sincronizar(supabaseClient.from('pagos').upsert(cambios.map(pagoToRow), { onConflict: 'deuda_id,mes' }), 'recalcularAcumulados');
+    }
+    return cambios.length;
   },
 
   // Genera (si no existen) los registros de pago del mes para todas las deudas activas,
@@ -299,17 +331,14 @@ const DB = {
   marcarPago(deudaId, mes, pagado) {
     const deuda = this.getDeuda(deudaId);
     const pago = this.getPago(deudaId, mes) || { deudaId, mes, gasto: deuda.valorCuota, cuotaPagadaAcumulada: null, pagado: false };
-    const acumAntes = this.cuotaAcumuladaAntesDe(deudaId, mes);
-    let nuevoAcum = pago.cuotaPagadaAcumulada ?? acumAntes;
-    if (deuda.tipo === 'cuotas') {
-      nuevoAcum = pagado ? Math.min(acumAntes + 1, deuda.cuotasTotales ?? Infinity) : acumAntes;
-    }
     this.upsertPago({
       ...pago,
       pagado,
       fechaPago: pagado ? new Date().toISOString() : null,
-      cuotaPagadaAcumulada: nuevoAcum,
+      cuotaPagadaAcumulada: deuda.tipo === 'cuotas' ? pago.cuotaPagadaAcumulada : null,
     });
+    // Recalcula este pago y los meses siguientes del mismo crédito (su acumulado cambia).
+    if (deuda.tipo === 'cuotas') this.recalcularAcumulados(deudaId);
   },
 
   // ---------- Ingresos ----------

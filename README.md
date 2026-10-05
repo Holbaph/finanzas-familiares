@@ -43,6 +43,14 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   mes siguiente; se puede ajustar a mano, recalcular o deshacer.
 - **Informe en Excel**: Ajustes → Exportar informe a Excel genera un `.xlsx` real con todo
   (Resumen Mensual, Deudas, Historial de Pagos, Ingresos, Gastos), solo para revisar/analizar.
+- **Informe en PDF**: Ajustes → Informes → Generar informe PDF. Eliges un mes y una o más
+  empresas, y arma un PDF con el monto de cada deuda, las cuotas pagadas (ej. 3/12), su estado
+  (Pagado / Pendiente) y los totales del mes. En el celular abre la hoja de compartir (guardar
+  en Archivos, WhatsApp, imprimir...); en el computador se descarga.
+- **Revisión de cuotas**: Ajustes → Informes → Revisar cuotas pagadas. Muestra, mes a mes, cómo
+  van sumando las cuotas de cada crédito y avisa si un mes anterior quedó "Sin marcar" (para
+  marcarlo ahí mismo). Las cuotas pagadas siempre se calculan desde los meses marcados como
+  pagados, así que no se pueden desfasar.
 - **Respaldo `.json`**: exporta/importa un archivo con todos tus datos (excepto fotos) como
   copia de seguridad extra, además de la nube.
 

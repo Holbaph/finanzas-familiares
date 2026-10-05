@@ -1,7 +1,7 @@
 // Service worker — cachea el "cascarón" estático de la app (HTML/CSS/JS/íconos) para
 // que cargue rápido. Ya no garantiza uso 100% sin conexión: la app necesita internet
 // para hablar con Supabase (los datos y las fotos viven ahí, no en este dispositivo).
-const CACHE_NAME = 'finanzas-familiares-v18';
+const CACHE_NAME = 'finanzas-familiares-v19';
 const ASSETS = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const ASSETS = [
   './js/photos.js',
   './js/lock.js',
   './js/xlsx-writer.js',
+  './js/pdf-writer.js',
   './js/app.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

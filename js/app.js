@@ -128,6 +128,7 @@ function init() {
   appStarted = true;
   DB.seedIfEmpty();
   DB.migrar();
+  const acumCorregidos = DB.recalcularAcumulados();
   currentMonth = DB.getMeta().mesActual || Utils.monthKey();
   DB.ensureMes(currentMonth);
   populateCategoriaFilter();
@@ -140,6 +141,7 @@ function init() {
   wireGastoTipoSegmented();
   wireThemeGrid();
   renderAll();
+  if (acumCorregidos > 0) showToast(`Se corrigieron ${acumCorregidos} cuotas pagadas desfasadas`);
 }
 
 function renderAll() {
@@ -533,7 +535,8 @@ function renderDeudas() {
 }
 
 function deudaCardHtml(deuda, pago) {
-  const acumulada = pago ? pago.cuotaPagadaAcumulada : null;
+  // Siempre calculado desde el historial de pagos (no del valor guardado, que podía quedar desfasado).
+  const acumulada = deuda.tipo === 'cuotas' ? DB.cuotasPagadasHasta(deuda.id, pago ? pago.mes : currentMonth) : null;
   const finalizada = deuda.tipo === 'cuotas' && deuda.cuotasTotales != null && acumulada != null && acumulada >= deuda.cuotasTotales;
   const ultimaCuotaPendiente = deuda.tipo === 'cuotas' && deuda.cuotasTotales != null && !finalizada
     && !(pago && pago.pagado) && (acumulada ?? 0) + 1 >= deuda.cuotasTotales;
@@ -1350,6 +1353,239 @@ function generarInformeExcel() {
   );
 }
 
+// ---------- INFORMES (PDF por mes y empresa) ----------
+function empresasConDeudas() {
+  return [...new Set(DB.getDeudas().map(d => d.empresa || 'Otros'))].sort((a, b) => a.localeCompare(b));
+}
+
+// Una fila por deuda que tenga registro de pago en ese mes, agrupadas por empresa.
+function filasInformeMes(mes, empresasSel) {
+  const deudas = DB.getDeudas();
+  const sel = new Set(empresasSel);
+  const grupos = {};
+  DB.getPagosDeMes(mes).forEach(pago => {
+    const deuda = deudas.find(d => d.id === pago.deudaId);
+    if (!deuda) return;
+    const empresa = deuda.empresa || 'Otros';
+    if (!sel.has(empresa)) return;
+    const esCuotas = deuda.tipo === 'cuotas';
+    const pagadas = esCuotas ? DB.cuotasPagadasHasta(deuda.id, mes) : null;
+    const monto = Number(pago.gasto);
+    const completa = esCuotas && deuda.cuotasTotales != null && pagadas >= deuda.cuotasTotales && monto === 0;
+    let estado = pago.pagado ? 'Pagado' : (completa ? 'Completa' : 'Pendiente');
+    if (!deuda.activa) estado += ' (archivada)';
+    if (!grupos[empresa]) grupos[empresa] = [];
+    grupos[empresa].push({
+      detalle: deuda.detalle,
+      monto,
+      pagado: !!pago.pagado,
+      cuotas: esCuotas ? `${pagadas}/${deuda.cuotasTotales ?? '?'}` : 'Recurrente',
+      estado,
+      color: pago.pagado ? [0.1, 0.55, 0.25] : (completa ? [0.5, 0.25, 0.7] : [0.8, 0.15, 0.15]),
+    });
+  });
+  Object.values(grupos).forEach(filas => filas.sort((a, b) => a.detalle.localeCompare(b.detalle)));
+  return grupos;
+}
+
+function generarInformePdf(mes, empresasSel, todasLasEmpresas) {
+  const grupos = filasInformeMes(mes, empresasSel);
+  const nombresEmpresa = Object.keys(grupos).sort((a, b) => a.localeCompare(b));
+  const todas = nombresEmpresa.flatMap(e => grupos[e]);
+  const total = todas.reduce((s, f) => s + f.monto, 0);
+  const pagado = todas.filter(f => f.pagado).reduce((s, f) => s + f.monto, 0);
+
+  const doc = new PdfDoc();
+  const M = 40;
+  const FILA = 18;
+  const GRIS = [0.45, 0.45, 0.5];
+  const col = { detalle: M + 8, montoDer: M + 296, cuotasCentro: M + 352, estado: M + 410 };
+  const limiteY = doc.alto - 50;
+  let y = 56;
+
+  doc.texto(M, y, 'Informe de deudas', { size: 20, bold: true });
+  y += 22;
+  doc.texto(M, y, Utils.monthLabel(mes), { size: 13, bold: true, color: [0.3, 0.2, 0.6] });
+  y += 16;
+  const textoEmpresas = todasLasEmpresas ? 'Todas las empresas' : `Empresas: ${empresasSel.join(', ')}`;
+  doc.texto(M, y, doc.ajustar(textoEmpresas, 515, 9.5, false), { size: 9.5, color: GRIS });
+  y += 13;
+  const hoy = new Date();
+  doc.texto(M, y, `Generado el ${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`, { size: 9.5, color: GRIS });
+  y += 22;
+
+  const cajas = [
+    ['Total del mes', total, [0.2, 0.2, 0.25]],
+    ['Pagado', pagado, [0.1, 0.55, 0.25]],
+    ['Pendiente', total - pagado, [0.8, 0.15, 0.15]],
+  ];
+  const anchoCaja = (515 - 2 * 12) / 3;
+  cajas.forEach(([titulo, valor, color], i) => {
+    const x = M + i * (anchoCaja + 12);
+    doc.rect(x, y, anchoCaja, 46);
+    doc.texto(x + 10, y + 16, titulo, { size: 9, color: GRIS });
+    doc.texto(x + 10, y + 36, Utils.formatCLP(valor), { size: 15, bold: true, color });
+  });
+  y += 46 + 8;
+  doc.texto(M, y + 8, `${todas.length} deuda${todas.length === 1 ? '' : 's'} en este informe`, { size: 9, color: GRIS });
+  y += 26;
+
+  function encabezadoTabla() {
+    doc.rect(M, y, 515, FILA, { relleno: [0.82, 0.82, 0.9] });
+    const t = { size: 8.5, bold: true };
+    doc.texto(col.detalle, y + 12.5, 'DETALLE', t);
+    doc.texto(col.montoDer, y + 12.5, 'MONTO', { ...t, align: 'right' });
+    doc.texto(col.cuotasCentro, y + 12.5, 'CUOTAS PAGADAS', { ...t, align: 'center' });
+    doc.texto(col.estado, y + 12.5, 'ESTADO', t);
+    y += FILA;
+  }
+  function asegurar(alto) {
+    if (y + alto <= limiteY) return;
+    doc.nuevaPagina();
+    y = 50;
+    encabezadoTabla();
+  }
+
+  if (todas.length === 0) {
+    doc.texto(M, y + 10, 'No hay deudas registradas para ese mes y esas empresas.', { size: 11, color: GRIS });
+  } else {
+    encabezadoTabla();
+    nombresEmpresa.forEach(empresa => {
+      const filas = grupos[empresa];
+      asegurar(FILA * 2 + 8);
+      const subtotal = filas.reduce((s, f) => s + f.monto, 0);
+      doc.rect(M, y + 4, 515, FILA, { relleno: [0.94, 0.93, 0.98] });
+      doc.texto(col.detalle, y + 4 + 12.5, empresa, { size: 10, bold: true });
+      doc.texto(col.montoDer, y + 4 + 12.5, Utils.formatCLP(subtotal), { size: 10, bold: true, align: 'right' });
+      y += FILA + 4;
+      filas.forEach(f => {
+        asegurar(FILA);
+        doc.texto(col.detalle, y + 12.5, doc.ajustar(f.detalle, 200, 9.5, false), { size: 9.5 });
+        doc.texto(col.montoDer, y + 12.5, Utils.formatCLP(f.monto), { size: 9.5, align: 'right' });
+        doc.texto(col.cuotasCentro, y + 12.5, f.cuotas, { size: 9.5, align: 'center', color: f.cuotas === 'Recurrente' ? GRIS : [0, 0, 0] });
+        doc.texto(col.estado, y + 12.5, doc.ajustar(f.estado, 105, 9.5, true), { size: 9.5, bold: true, color: f.color });
+        doc.linea(M, y + FILA, M + 515, y + FILA);
+        y += FILA;
+      });
+      y += 4;
+    });
+  }
+
+  return doc.generar('Finanzas Familiares');
+}
+
+function abrirInformePdf() {
+  const empresas = empresasConDeudas();
+  const meses = [...new Set([currentMonth, Utils.monthKey(), ...DB.getPagos().map(p => p.mes)])].sort().reverse();
+  if (empresas.length === 0) { showToast('Aún no hay deudas para armar un informe'); return; }
+
+  openSheet(`
+    <h2>Informe PDF</h2>
+    <p class="muted" style="margin-top:-10px">Elige el mes y las empresas que quieres incluir.</p>
+    <div class="form-group">
+      <label>Mes</label>
+      <select id="pdf-mes">
+        ${meses.map(m => `<option value="${m}" ${m === currentMonth ? 'selected' : ''}>${Utils.monthLabel(m)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="check-list">
+      <div class="check-list-title">Empresas</div>
+      <label class="check-row"><input type="checkbox" id="pdf-todas" checked> <strong>Todas</strong></label>
+      ${empresas.map(e => `<label class="check-row"><input type="checkbox" class="pdf-emp" value="${escapeAttr(e)}" checked> ${escapeHtml(e)}</label>`).join('')}
+    </div>
+    <p class="muted" id="pdf-resumen"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-primary full" id="btnGenerarPdf">Generar PDF</button>
+      <button class="btn btn-secondary full" id="btnCancelarPdf">Cancelar</button>
+    </div>
+  `);
+
+  const checks = [...document.querySelectorAll('.pdf-emp')];
+  const todasChk = document.getElementById('pdf-todas');
+  const seleccionadas = () => checks.filter(c => c.checked).map(c => c.value);
+  const actualizarResumen = () => {
+    const mes = document.getElementById('pdf-mes').value;
+    const sel = seleccionadas();
+    const grupos = filasInformeMes(mes, sel);
+    const filas = Object.values(grupos).flat();
+    const total = filas.reduce((s, f) => s + f.monto, 0);
+    document.getElementById('pdf-resumen').textContent = sel.length === 0
+      ? 'Selecciona al menos una empresa.'
+      : filas.length === 0
+        ? 'No hay deudas registradas ese mes en las empresas elegidas.'
+        : `${filas.length} deuda${filas.length === 1 ? '' : 's'} · ${Utils.formatCLP(total)}`;
+    document.getElementById('btnGenerarPdf').disabled = filas.length === 0;
+  };
+  todasChk.addEventListener('change', () => {
+    checks.forEach(c => { c.checked = todasChk.checked; });
+    actualizarResumen();
+  });
+  checks.forEach(c => c.addEventListener('change', () => {
+    todasChk.checked = checks.every(x => x.checked);
+    actualizarResumen();
+  }));
+  document.getElementById('pdf-mes').addEventListener('change', actualizarResumen);
+  document.getElementById('btnCancelarPdf').addEventListener('click', closeSheet);
+  document.getElementById('btnGenerarPdf').addEventListener('click', () => {
+    const mes = document.getElementById('pdf-mes').value;
+    const sel = seleccionadas();
+    try {
+      const blob = generarInformePdf(mes, sel, sel.length === empresas.length);
+      PdfWriter.entregar(blob, `informe-deudas-${mes}.pdf`);
+      closeSheet();
+    } catch (e) {
+      console.error(e);
+      showToast('No se pudo generar el PDF');
+    }
+  });
+  actualizarResumen();
+}
+
+// ---------- Revisión de cuotas pagadas ----------
+function abrirRevisionCuotas() {
+  const hoyMes = Utils.monthKey();
+  const deudas = DB.getDeudas().filter(d => d.tipo === 'cuotas')
+    .sort((a, b) => (a.empresa + a.detalle).localeCompare(b.empresa + b.detalle));
+
+  const bloques = deudas.map(d => {
+    const pagos = DB.getPagosDeDeuda(d.id);
+    const pagadasTotal = DB.cuotasPagadasHasta(d.id, '9999-12');
+    const base = d.cuotasPagadasBase || 0;
+    const filas = pagos.map(p => {
+      const acum = DB.cuotasPagadasHasta(d.id, p.mes);
+      const olvidado = !p.pagado && Utils.compareMonth(p.mes, hoyMes) < 0 && Number(p.gasto) > 0;
+      return `<div class="historial-row">
+        <span class="h-mes">${Utils.monthLabel(p.mes)}</span>
+        <span class="${p.pagado ? 'rev-ok' : (olvidado ? 'rev-warn' : '')}">${p.pagado ? '✓ Pagado' : (olvidado ? '⚠ Sin marcar' : 'Pendiente')} · ${acum}/${d.cuotasTotales ?? '?'}</span>
+        ${olvidado ? `<button class="btn-mini" data-rev-pagar="${d.id}|${p.mes}">Marcar pagado</button>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="section-block">
+      <h2>${escapeHtml(d.icono || '📌')} ${escapeHtml(d.empresa)} · ${escapeHtml(d.detalle)}${d.activa ? '' : ' (archivada)'}</h2>
+      <p class="muted" style="margin:-4px 0 8px">${pagadasTotal}/${d.cuotasTotales ?? '?'} cuotas pagadas${base ? ` (incluye ${base} de antes de usar la app)` : ''}</p>
+      <div class="historial-list">${filas || '<div class="empty-state">Sin meses registrados.</div>'}</div>
+    </div>`;
+  }).join('');
+
+  openSheet(`
+    <h2>Revisión de cuotas</h2>
+    <p class="muted" style="margin-top:-10px">Cada mes marcado como <strong>Pagado</strong> suma una cuota. Si un mes anterior quedó
+      "Sin marcar" pero ya lo pagaste, no suma: márcalo desde aquí.</p>
+    ${bloques || '<div class="empty-state">No tienes créditos en cuotas.</div>'}
+    <div class="sheet-actions"><button class="btn btn-secondary full" id="btnCerrarRevision">Cerrar</button></div>
+  `);
+  document.getElementById('btnCerrarRevision').addEventListener('click', closeSheet);
+  document.querySelectorAll('[data-rev-pagar]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [id, mes] = btn.dataset.revPagar.split('|');
+      DB.marcarPago(id, mes, true);
+      renderAll();
+      abrirRevisionCuotas();
+      showToast('Cuota marcada como pagada');
+    });
+  });
+}
+
 // ---------- AJUSTES ----------
 function renderUltimoRespaldo() {
   const info = DB.getMeta().ultimoRespaldo;
@@ -1382,6 +1618,9 @@ function wireAjustes() {
       showToast('No se pudo generar el informe');
     }
   });
+
+  document.getElementById('btnInformePdf').addEventListener('click', abrirInformePdf);
+  document.getElementById('btnRevisarCuotas').addEventListener('click', abrirRevisionCuotas);
 
   document.getElementById('btnExport').addEventListener('click', () => {
     const nombre = `finanzas-respaldo-${Utils.monthKey()}.json`;

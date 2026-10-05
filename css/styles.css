@@ -543,6 +543,43 @@ main#views {
   border-radius: 8px;
 }
 .historial-row .h-mes { text-transform: capitalize; color: var(--text-muted); }
+.historial-row { align-items: center; gap: 8px; }
+.rev-ok { color: var(--green); font-weight: 600; }
+.rev-warn { color: var(--red); font-weight: 600; }
+.btn-mini {
+  border: none;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--purple);
+  background: rgba(175,82,222,0.15);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.check-list { margin-bottom: 14px; }
+.check-list-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 15px;
+}
+.check-row input { width: 20px; height: 20px; flex: none; }
 
 .toast {
   position: fixed;
