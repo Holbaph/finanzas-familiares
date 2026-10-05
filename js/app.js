@@ -47,6 +47,27 @@ function ocultarOverlaysArranque() {
   document.addEventListener(ev, e => e.preventDefault(), { passive: false })
 );
 
+// Respaldo contra el zoom por doble toque (iOS a veces lo hace pese a touch-action): un
+// segundo toque a menos de 350 ms del anterior no se propaga como zoom. Los campos de
+// texto quedan fuera para no molestar al escribir.
+let ultimoToque = 0;
+document.addEventListener('touchend', e => {
+  const ahora = Date.now();
+  if (ahora - ultimoToque < 350 && !(e.target.closest && e.target.closest('input, textarea, select'))) e.preventDefault();
+  ultimoToque = ahora;
+}, { passive: false });
+
+// Si aun así la pantalla quedara ampliada, la devuelve a su tamaño normal.
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    if (window.visualViewport.scale <= 1.01) return;
+    const meta = document.querySelector('meta[name="viewport"]');
+    const original = meta.getAttribute('content');
+    meta.setAttribute('content', 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover');
+    setTimeout(() => meta.setAttribute('content', original), 100);
+  });
+}
+
 async function boot() {
   applyTheme(DB.getMeta().tema || 'auto');
   wireLock();
@@ -368,7 +389,7 @@ function renderResumen() {
   const pendientesList = document.getElementById('pendientesList');
   const pendientes = pagos.filter(p => !p.pagado)
     .map(p => ({ pago: p, deuda: deudas.find(d => d.id === p.deudaId) }))
-    .filter(x => x.deuda)
+    .filter(x => x.deuda && x.deuda.activa)
     .sort((a, b) => b.pago.gasto - a.pago.gasto);
   if (pendientes.length === 0) {
     pendientesList.innerHTML = '<div class="empty-state">Todo pagado este mes 🎉</div>';
@@ -552,7 +573,7 @@ function deudaCardHtml(deuda, pago) {
   const pct = (deuda.tipo === 'cuotas' && deuda.cuotasTotales) ? Math.min(100, Math.round(((acumulada ?? 0) / deuda.cuotasTotales) * 100)) : null;
 
   const rightControl = !deuda.activa
-    ? `<span class="finalizada-badge" style="cursor:default">✓ Archivada</span>`
+    ? `<span class="finalizada-badge" style="cursor:default">${finalizada ? '✓ Completa' : '✓ Archivada'}</span>`
     : finalizada
     ? `<button class="finalizada-badge" data-archivar-id="${deuda.id}">✓ Completa · Archivar</button>`
     : ultimaCuotaPendiente
