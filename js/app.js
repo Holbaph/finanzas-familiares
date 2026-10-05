@@ -1442,7 +1442,7 @@ function generarInformeExcel() {
 
 // ---------- INFORMES (PDF por mes y empresa) ----------
 function empresasConDeudas() {
-  return [...new Set(DB.getDeudas().filter(d => d.activa).map(d => d.empresa || 'Otros'))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(DB.getDeudas().map(d => d.empresa || 'Otros'))].sort((a, b) => a.localeCompare(b));
 }
 
 // Una fila por deuda que tenga registro de pago en ese mes, agrupadas por empresa.
@@ -1452,15 +1452,20 @@ function filasInformeMes(mes, empresasSel) {
   const grupos = {};
   DB.getPagosDeMes(mes).forEach(pago => {
     const deuda = deudas.find(d => d.id === pago.deudaId);
-    if (!deuda || !deuda.activa) return; // el informe solo incluye deudas activas
+    if (!deuda) return;
+    // Una deuda archivada/completa sigue en el informe de los meses en que estuvo vigente
+    // (hasta el mes en que se archivó), ya con su estado actual (Pagado). Los meses
+    // posteriores a su archivado no la incluyen.
+    if (!deuda.activa && deuda.fechaArchivo && Utils.compareMonth(mes, deuda.fechaArchivo.slice(0, 7)) > 0) return;
     const empresa = deuda.empresa || 'Otros';
     if (!sel.has(empresa)) return;
     const esCuotas = deuda.tipo === 'cuotas';
     const pagadas = esCuotas ? DB.cuotasPagadasHasta(deuda.id, mes) : null;
     const monto = Number(pago.gasto);
-    // Crédito cuyas cuotas ya estaban todas pagadas antes de este mes: no debe nada, no aparece.
-    if (esCuotas && deuda.cuotasTotales != null && !pago.pagado
-        && DB.cuotaAcumuladaAntesDe(deuda.id, mes) >= deuda.cuotasTotales) return;
+    // Crédito cuyas cuotas ya estaban todas pagadas antes de este mes (y este mes no se pagó
+    // nada): no debía nada, no aparece.
+    if (!pago.pagado && (monto === 0 || (esCuotas && deuda.cuotasTotales != null
+        && DB.cuotaAcumuladaAntesDe(deuda.id, mes) >= deuda.cuotasTotales))) return;
     const estado = pago.pagado ? 'Pagado' : 'Pendiente';
     if (!grupos[empresa]) grupos[empresa] = [];
     grupos[empresa].push({
