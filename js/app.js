@@ -509,7 +509,12 @@ function renderDeudas() {
   const filtro = document.getElementById('filtroCategoria').value;
   const deudas = DB.getDeudas().filter(d => {
     if (!filtro || d.empresa === filtro) {
-      if (d.activa) return true;
+      if (d.activa) {
+        // Antes del mes de inicio la deuda no existía (salvo que ese mes tenga un pago marcado).
+        if (!d.fechaInicio || Utils.compareMonth(currentMonth, d.fechaInicio) >= 0) return true;
+        const p = DB.getPago(d.id, currentMonth);
+        return !!(p && p.pagado);
+      }
       // Recién archivada este mismo mes: se sigue mostrando hasta que cambie el mes.
       return d.fechaArchivo && d.fechaArchivo.slice(0, 7) === currentMonth;
     }
@@ -645,7 +650,11 @@ function attachDeudaCardEvents(container) {
 
 function openDeudaForm(deuda) {
   const editing = !!deuda;
-  const d = deuda || { empresa: '', detalle: '', icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '' };
+  const d = deuda || { empresa: '', detalle: '', icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '', fechaInicio: currentMonth };
+  const mesesInicio = [];
+  for (let m = Utils.shiftMonth(Utils.monthKey(), -60); Utils.compareMonth(m, Utils.shiftMonth(Utils.monthKey(), 12)) <= 0; m = Utils.shiftMonth(m, 1)) mesesInicio.push(m);
+  if (d.fechaInicio && !mesesInicio.includes(d.fechaInicio)) mesesInicio.push(d.fechaInicio);
+  mesesInicio.sort();
   const empresas = DB.getEmpresas();
   const empresaEsNueva = !d.empresa || !empresas.includes(d.empresa);
 
@@ -686,8 +695,15 @@ function openDeudaForm(deuda) {
         <input type="number" id="f-valorCuota" value="${d.valorCuota}" placeholder="Ej: 25000">
       </div>
     </div>
-    <div class="form-group" id="f-cuotasPagadas-group" style="${(!editing && d.tipo === 'cuotas') ? '' : 'display:none'}">
-      <label>Cuotas ya pagadas antes de este mes</label>
+    <div class="form-group">
+      <label>Mes de inicio de la deuda</label>
+      <select id="f-fechaInicio">
+        ${mesesInicio.map(m => `<option value="${m}" ${m === d.fechaInicio ? 'selected' : ''}>${Utils.monthLabel(m)}</option>`).join('')}
+      </select>
+      <p class="muted" style="margin:6px 0 0">Los meses anteriores a este no cuentan como deuda.</p>
+    </div>
+    <div class="form-group" id="f-cuotasPagadas-group" style="${d.tipo === 'cuotas' ? '' : 'display:none'}">
+      <label>Cuotas ya pagadas antes del mes de inicio</label>
       <input type="number" id="f-cuotasPagadasBase" value="${d.cuotasPagadasBase || 0}">
     </div>
     <div class="form-group">
@@ -715,7 +731,7 @@ function openDeudaForm(deuda) {
       b.classList.add('active');
       const isCuotas = b.dataset.tipo === 'cuotas';
       document.getElementById('f-cuotasTotales-group').style.display = isCuotas ? '' : 'none';
-      document.getElementById('f-cuotasPagadas-group').style.display = (isCuotas && !editing) ? '' : 'none';
+      document.getElementById('f-cuotasPagadas-group').style.display = isCuotas ? '' : 'none';
     });
   });
 
@@ -770,16 +786,21 @@ function openDeudaForm(deuda) {
 
     DB.addEmpresa(empresa);
 
+    const fechaInicio = document.getElementById('f-fechaInicio').value;
+    const cuotasPagadasBase = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasPagadasBase').value, 10) || 0) : 0;
+
     if (editing) {
-      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas, fotoId });
+      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas, fotoId, fechaInicio, cuotasPagadasBase });
       const pagoActual = DB.getPago(deuda.id, currentMonth);
       if (pagoActual && !pagoActual.pagado) {
         DB.upsertPago({ ...pagoActual, gasto: valorCuota });
       }
+      DB.ensureDesdeInicio(deuda.id, Utils.monthKey());
+      if (tipo === 'cuotas') DB.recalcularAcumulados(deuda.id);
       showToast('Deuda actualizada');
     } else {
-      const cuotasPagadasBase = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasPagadasBase').value, 10) || 0) : 0;
-      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio: currentMonth, fotoId });
+      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio, fotoId });
+      DB.ensureDesdeInicio(nueva.id, Utils.monthKey());
       DB.ensureMes(currentMonth);
       showToast('Deuda agregada');
     }
@@ -793,11 +814,13 @@ function openDeudaForm(deuda) {
 function openDeudaDetail(id) {
   const deuda = DB.getDeuda(id);
   if (!deuda) return;
-  const historial = DB.getPagosDeDeuda(id);
+  // Solo desde el mes de inicio (antes la deuda no existía), salvo meses ya marcados pagados.
+  const historial = DB.getPagosDeDeuda(id)
+    .filter(p => p.pagado || !deuda.fechaInicio || Utils.compareMonth(p.mes, deuda.fechaInicio) >= 0);
 
   openSheet(`
     <h2>${escapeHtml(deuda.icono || '📌')} ${escapeHtml(deuda.detalle)}</h2>
-    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}</p>
+    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}${deuda.fechaInicio ? ` · desde ${Utils.monthLabel(deuda.fechaInicio)}` : ''}</p>
     ${!deuda.activa ? `<div class="form-group"><span class="badge-estado reembolsado">Archivada el ${formatFechaCorta(deuda.fechaArchivo.slice(0, 10))}</span></div>` : ''}
     ${deuda.fotoId ? `<div class="form-group"><div id="previewFotoDeudaDetalle"><div class="photo-preview-empty">📷</div></div></div>` : ''}
     <div class="sheet-actions">
@@ -806,12 +829,13 @@ function openDeudaDetail(id) {
     </div>
     <div class="section-block">
       <h2>Historial de pagos</h2>
+      <p class="muted" style="margin:-4px 0 8px">Toca el estado de un mes para cambiarlo entre Pagado y Pendiente.</p>
       <div class="historial-list">
         ${historial.length ? historial.map(p => `
           <div class="historial-row">
             <span class="h-mes">${Utils.monthLabel(p.mes)}</span>
             <span>${Utils.formatCLP(p.gasto)}</span>
-            <span>${p.pagado ? `✓ Pagado${p.fechaPago ? ' · ' + formatFechaCorta(p.fechaPago.slice(0, 10)) : ''}` : 'Pendiente'}</span>
+            <button class="estado-toggle ${p.pagado ? 'pagado' : 'pendiente'}" data-hist-mes="${p.mes}">${p.pagado ? '✓ Pagado' : 'Pendiente'}</button>
           </div>`).join('') : '<div class="empty-state">Sin historial aún</div>'}
       </div>
     </div>
@@ -829,6 +853,15 @@ function openDeudaDetail(id) {
     });
   }
 
+  document.querySelectorAll('[data-hist-mes]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mes = btn.dataset.histMes;
+      const pago = DB.getPago(id, mes);
+      DB.marcarPago(id, mes, !(pago && pago.pagado));
+      renderAll();
+      openDeudaDetail(id);
+    });
+  });
   document.getElementById('btnEditarDeuda').addEventListener('click', () => openDeudaForm(deuda));
   document.getElementById('btnCerrarDetalle').addEventListener('click', closeSheet);
   document.getElementById('btnEliminarDeuda').addEventListener('click', () => {
@@ -1586,7 +1619,7 @@ function abrirRevisionCuotas() {
       return `<div class="historial-row">
         <span class="h-mes">${Utils.monthLabel(p.mes)}</span>
         <span class="${p.pagado ? 'rev-ok' : (olvidado ? 'rev-warn' : '')}">${p.pagado ? '✓ Pagado' : (antesDeEmpezar ? 'Antes de empezar' : (olvidado ? '⚠ Sin marcar' : 'Pendiente'))} · ${acum}/${d.cuotasTotales ?? '?'}</span>
-        ${olvidado ? `<button class="btn-mini" data-rev-pagar="${d.id}|${p.mes}">Marcar pagado</button>` : ''}
+        ${(p.pagado || !antesDeEmpezar) ? `<button class="btn-mini" data-rev-pagar="${d.id}|${p.mes}">${p.pagado ? 'Desmarcar' : 'Marcar pagado'}</button>` : ''}
       </div>`;
     }).join('');
     return `<div class="section-block">
@@ -1598,8 +1631,8 @@ function abrirRevisionCuotas() {
 
   openSheet(`
     <h2>Revisión de cuotas</h2>
-    <p class="muted" style="margin-top:-10px">Cada mes marcado como <strong>Pagado</strong> suma una cuota. Si un mes anterior quedó
-      "Sin marcar" pero ya lo pagaste, no suma: márcalo desde aquí.</p>
+    <p class="muted" style="margin-top:-10px">Cada mes marcado como <strong>Pagado</strong> suma una cuota. Puedes marcar o
+      desmarcar cualquier mes desde aquí (o desde el detalle de cada deuda).</p>
     ${bloques || '<div class="empty-state">No tienes créditos en cuotas.</div>'}
     <div class="sheet-actions"><button class="btn btn-secondary full" id="btnCerrarRevision">Cerrar</button></div>
   `);
@@ -1607,10 +1640,12 @@ function abrirRevisionCuotas() {
   document.querySelectorAll('[data-rev-pagar]').forEach(btn => {
     btn.addEventListener('click', () => {
       const [id, mes] = btn.dataset.revPagar.split('|');
-      DB.marcarPago(id, mes, true);
+      const pago = DB.getPago(id, mes);
+      const pagar = !(pago && pago.pagado);
+      DB.marcarPago(id, mes, pagar);
       renderAll();
       abrirRevisionCuotas();
-      showToast('Cuota marcada como pagada');
+      showToast(pagar ? 'Cuota marcada como pagada' : 'Cuota marcada como pendiente');
     });
   });
 }

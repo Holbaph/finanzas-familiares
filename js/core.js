@@ -247,7 +247,15 @@ const DB = {
   getPago(deudaId, mes) {
     return this._cache.pagos.find(p => p.deudaId === deudaId && p.mes === mes) || null;
   },
-  getPagosDeMes(mes) { return this._cache.pagos.filter(p => p.mes === mes); },
+  // Un pago pendiente de un mes anterior al inicio de su deuda no cuenta: antes no existía.
+  getPagosDeMes(mes) {
+    return this._cache.pagos.filter(p => {
+      if (p.mes !== mes) return false;
+      if (p.pagado) return true;
+      const d = this.getDeuda(p.deudaId);
+      return !d || !d.fechaInicio || Utils.compareMonth(p.mes, d.fechaInicio) >= 0;
+    });
+  },
   getPagosDeDeuda(deudaId) {
     return this._cache.pagos.filter(p => p.deudaId === deudaId).sort((a, b) => Utils.compareMonth(a.mes, b.mes));
   },
@@ -345,7 +353,9 @@ const DB = {
 
   // Corrige de una vez los registros de pagos inconsistentes. Devuelve cuántos tocó.
   sanearPagos() {
-    return this.archivarCompletas() + this.liquidarArchivadas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
+    // (No se re-liquidan las archivadas en cada arranque: así se puede corregir a mano un mes
+    // de una deuda archivada. Se liquidan solo al archivarlas.)
+    return this.archivarCompletas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
   },
 
   // Deja el campo guardado "cuotaPagadaAcumulada" de cada pago de un crédito (o de todos
@@ -370,27 +380,49 @@ const DB = {
 
   // Genera (si no existen) los registros de pago del mes para todas las deudas activas,
   // arrastrando el gasto esperado y el acumulado de cuotas del mes anterior. Idempotente.
+  // No crea pagos de meses anteriores al inicio de la deuda (antes no existía).
   ensureMes(mes) {
-    const deudas = this._cache.deudas.filter(d => d.activa);
     const pagos = this.getPagos();
     let changed = false;
-    deudas.forEach(d => {
-      const existe = pagos.find(p => p.deudaId === d.id && p.mes === mes);
-      if (existe) return;
-      const acumAntes = this.cuotaAcumuladaAntesDe(d.id, mes);
-      const completa = d.tipo === 'cuotas' && d.cuotasTotales != null && acumAntes >= d.cuotasTotales;
-      pagos.push({
-        id: Utils.uid(),
-        deudaId: d.id,
-        mes,
-        gasto: completa ? 0 : d.valorCuota,
-        cuotaPagadaAcumulada: d.tipo === 'cuotas' ? acumAntes : null,
-        pagado: false,
-        fechaPago: null,
-      });
+    this._cache.deudas.filter(d => d.activa).forEach(d => {
+      if (d.fechaInicio && Utils.compareMonth(mes, d.fechaInicio) < 0) return;
+      if (pagos.find(p => p.deudaId === d.id && p.mes === mes)) return;
+      pagos.push(this._pagoNuevo(d, mes));
       changed = true;
     });
     if (changed) this.savePagos(pagos);
+  },
+
+  // Crea (pendientes) los meses que falten entre el inicio de la deuda y "hasta", para poder
+  // ver y marcar cada mes desde que empezó. No toca los meses que ya existen.
+  ensureDesdeInicio(deudaId, hasta) {
+    const d = this.getDeuda(deudaId);
+    if (!d || !d.activa || !d.fechaInicio) return;
+    const pagos = this.getPagos();
+    let changed = false;
+    let mes = d.fechaInicio;
+    for (let i = 0; i < 120 && Utils.compareMonth(mes, hasta) <= 0; i++) {
+      if (!pagos.find(p => p.deudaId === d.id && p.mes === mes)) {
+        pagos.push(this._pagoNuevo(d, mes));
+        changed = true;
+      }
+      mes = Utils.shiftMonth(mes, 1);
+    }
+    if (changed) this.savePagos(pagos);
+  },
+
+  _pagoNuevo(d, mes) {
+    const acumAntes = this.cuotaAcumuladaAntesDe(d.id, mes);
+    const completa = d.tipo === 'cuotas' && d.cuotasTotales != null && acumAntes >= d.cuotasTotales;
+    return {
+      id: Utils.uid(),
+      deudaId: d.id,
+      mes,
+      gasto: completa ? 0 : d.valorCuota,
+      cuotaPagadaAcumulada: d.tipo === 'cuotas' ? acumAntes : null,
+      pagado: false,
+      fechaPago: null,
+    };
   },
 
   marcarPago(deudaId, mes, pagado) {
