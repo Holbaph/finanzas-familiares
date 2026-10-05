@@ -1355,7 +1355,7 @@ function generarInformeExcel() {
 
 // ---------- INFORMES (PDF por mes y empresa) ----------
 function empresasConDeudas() {
-  return [...new Set(DB.getDeudas().map(d => d.empresa || 'Otros'))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(DB.getDeudas().filter(d => d.activa).map(d => d.empresa || 'Otros'))].sort((a, b) => a.localeCompare(b));
 }
 
 // Una fila por deuda que tenga registro de pago en ese mes, agrupadas por empresa.
@@ -1365,15 +1365,14 @@ function filasInformeMes(mes, empresasSel) {
   const grupos = {};
   DB.getPagosDeMes(mes).forEach(pago => {
     const deuda = deudas.find(d => d.id === pago.deudaId);
-    if (!deuda) return;
+    if (!deuda || !deuda.activa) return; // el informe solo incluye deudas activas
     const empresa = deuda.empresa || 'Otros';
     if (!sel.has(empresa)) return;
     const esCuotas = deuda.tipo === 'cuotas';
     const pagadas = esCuotas ? DB.cuotasPagadasHasta(deuda.id, mes) : null;
     const monto = Number(pago.gasto);
     const completa = esCuotas && deuda.cuotasTotales != null && pagadas >= deuda.cuotasTotales && monto === 0;
-    let estado = pago.pagado ? 'Pagado' : (completa ? 'Completa' : 'Pendiente');
-    if (!deuda.activa) estado += ' (archivada)';
+    const estado = pago.pagado ? 'Pagado' : (completa ? 'Completa' : 'Pendiente');
     if (!grupos[empresa]) grupos[empresa] = [];
     grupos[empresa].push({
       detalle: deuda.detalle,
