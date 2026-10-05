@@ -1581,16 +1581,17 @@ function abrirRevisionCuotas() {
     const base = d.cuotasPagadasBase || 0;
     const filas = pagos.map(p => {
       const acum = DB.cuotasPagadasHasta(d.id, p.mes);
-      const olvidado = !p.pagado && Utils.compareMonth(p.mes, hoyMes) < 0 && Number(p.gasto) > 0;
+      const antesDeEmpezar = !p.pagado && Utils.compareMonth(p.mes, d.fechaInicio) < 0;
+      const olvidado = !p.pagado && !antesDeEmpezar && Utils.compareMonth(p.mes, hoyMes) < 0 && Number(p.gasto) > 0;
       return `<div class="historial-row">
         <span class="h-mes">${Utils.monthLabel(p.mes)}</span>
-        <span class="${p.pagado ? 'rev-ok' : (olvidado ? 'rev-warn' : '')}">${p.pagado ? '✓ Pagado' : (olvidado ? '⚠ Sin marcar' : 'Pendiente')} · ${acum}/${d.cuotasTotales ?? '?'}</span>
+        <span class="${p.pagado ? 'rev-ok' : (olvidado ? 'rev-warn' : '')}">${p.pagado ? '✓ Pagado' : (antesDeEmpezar ? 'Antes de empezar' : (olvidado ? '⚠ Sin marcar' : 'Pendiente'))} · ${acum}/${d.cuotasTotales ?? '?'}</span>
         ${olvidado ? `<button class="btn-mini" data-rev-pagar="${d.id}|${p.mes}">Marcar pagado</button>` : ''}
       </div>`;
     }).join('');
     return `<div class="section-block">
       <h2>${escapeHtml(d.icono || '📌')} ${escapeHtml(d.empresa)} · ${escapeHtml(d.detalle)}${d.activa ? '' : ' (archivada)'}</h2>
-      <p class="muted" style="margin:-4px 0 8px">${pagadasTotal}/${d.cuotasTotales ?? '?'} cuotas pagadas${base ? ` (incluye ${base} de antes de usar la app)` : ''}</p>
+      <p class="muted" style="margin:-4px 0 8px">${pagadasTotal}/${d.cuotasTotales ?? '?'} cuotas pagadas${base > 0 ? ` · ya llevabas ${base} pagadas antes de ${Utils.monthLabel(d.fechaInicio)}` : ''}</p>
       <div class="historial-list">${filas || '<div class="empty-state">Sin meses registrados.</div>'}</div>
     </div>`;
   }).join('');

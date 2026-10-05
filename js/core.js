@@ -274,7 +274,7 @@ const DB = {
       const cmp = Utils.compareMonth(p.mes, mes);
       return incluirMes ? cmp <= 0 : cmp < 0;
     }).length;
-    return Math.min((deuda.cuotasPagadasBase || 0) + pagados, deuda.cuotasTotales ?? Infinity);
+    return Math.max(0, Math.min((deuda.cuotasPagadasBase || 0) + pagados, deuda.cuotasTotales ?? Infinity));
   },
   // Hasta (e incluyendo) el mes indicado.
   cuotasPagadasHasta(deudaId, mes) {
@@ -613,6 +613,24 @@ const DB = {
     if (!meta.migracion_totol_v1) {
       this.renameEmpresa('Totot', 'Totol');
       this.setMeta({ migracion_totol_v1: true });
+    }
+    // Las cuotas que ya llevaban pagadas los créditos cargados al inicio (antes de julio)
+    // quedaron guardadas solo dentro del "acumulado" del primer pago, y la base de cada
+    // crédito en 0. Al calcular las cuotas desde el historial esas cuotas se perdían
+    // (p. ej. Ford 16/23 pasaba a 2/23). Se restituye la base (= acumulado de julio − 1).
+    if (!meta.migracion_base_cuotas_v1) {
+      const BASES = {
+        'Crédito Ford Aportillao': 14, 'Nintendo Switch2 BCI': 9, 'Plumón Rosen': 2,
+        'Refrigerador Mamá': 1, 'Botas Mili BCI': -1, 'Crédito Auto': 3,
+        'Camita Milita': 4, 'Muno Mili': 1, 'Ropita Mili Ripley': 1, 'Carrito Vacaciones': 1,
+      };
+      this._cache.deudas.forEach(d => {
+        const base = BASES[d.detalle];
+        if (d.tipo === 'cuotas' && base !== undefined && (d.cuotasPagadasBase || 0) === 0) {
+          this.updateDeuda(d.id, { cuotasPagadasBase: base });
+        }
+      });
+      this.setMeta({ migracion_base_cuotas_v1: true });
     }
   },
 };
