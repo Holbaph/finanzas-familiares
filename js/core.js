@@ -60,17 +60,51 @@ const Utils = {
 };
 
 // ---------- Conversión camelCase (JS) <-> snake_case (columnas Postgres) ----------
-function deudaToRow(d) {
+function deudaToRow(d, sinEntidad = false) {
   const row = {
     id: d.id, empresa: d.empresa, detalle: d.detalle, icono: d.icono, tipo: d.tipo,
     cuotas_totales: d.cuotasTotales, valor_cuota: d.valorCuota, cuotas_pagadas_base: d.cuotasPagadasBase,
     fecha_inicio: d.fechaInicio, activa: d.activa, fecha_archivo: d.fechaArchivo, notas: d.notas,
     foto_id: d.fotoId, creado_en: d.creadoEn,
   };
-  // La columna "entidad" solo existe si ya se corrió supabase/migracion-entidades.sql. Hasta
-  // entonces no se envía (salvo que haya una entidad asignada), para no romper el guardado.
-  if (d.entidad || DB._tieneEntidad) row.entidad = d.entidad || null;
+  // La columna "entidad" solo existe si ya se corrió supabase/migracion-entidades.sql. Mientras
+  // se sepa que falta no se envía, así el resto de la deuda se guarda igual sin errores.
+  if (!sinEntidad && DB._columnaEntidad !== false && (d.entidad || DB._columnaEntidad === true)) {
+    row.entidad = d.entidad || null;
+  }
   return row;
+}
+
+// Aviso (una sola vez por sesión) de que falta crear la columna/tabla de entidades en Supabase.
+let avisoSqlEntidadesMostrado = false;
+function avisarFaltaSqlEntidades() {
+  if (avisoSqlEntidadesMostrado) return;
+  avisoSqlEntidadesMostrado = true;
+  // Con un pequeño retraso: así no lo cierra el cierre del formulario que se acaba de guardar.
+  if (typeof mostrarAyudaSqlEntidades === 'function') setTimeout(mostrarAyudaSqlEntidades, 600);
+  else if (typeof showToast === 'function') showToast('Falta correr el SQL de entidades en Supabase');
+}
+const esErrorEntidad = (error) => /entidad/i.test(`${error.message || ''} ${error.details || ''} ${error.hint || ''}`);
+
+// Escribe deudas en Supabase. "hacer" recibe las filas y devuelve la promesa de Supabase. Si
+// la columna "entidad" no existe todavía, reintenta sin ella para que no se pierda el resto.
+function sincronizarDeudas(hacer, deudas, contexto) {
+  if (DB._columnaEntidad === false && deudas.some(d => d.entidad)) avisarFaltaSqlEntidades();
+  hacer(deudas.map(d => deudaToRow(d))).then(async ({ error }) => {
+    if (!error) return;
+    if (esErrorEntidad(error)) {
+      DB._columnaEntidad = false;
+      avisarFaltaSqlEntidades();
+      const r2 = await hacer(deudas.map(d => deudaToRow(d, true)));
+      if (!r2.error) return;
+      error = r2.error;
+    }
+    console.error(contexto, error);
+    if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
+  }).catch((e) => {
+    console.error(contexto, e);
+    if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
+  });
 }
 function rowToDeuda(r) {
   return {
@@ -125,12 +159,8 @@ function sincronizar(promesa, contexto) {
   promesa.then(({ error }) => {
     if (error) {
       console.error(contexto, error);
-      const falta = /entidad/i.test(`${error.message || ''} ${error.details || ''}`);
-      if (typeof showToast === 'function') {
-        showToast(falta
-          ? 'Falta correr el SQL de entidades en Supabase (supabase/migracion-entidades.sql)'
-          : 'No se pudo sincronizar con la nube (revisa tu conexión)');
-      }
+      if (esErrorEntidad(error)) avisarFaltaSqlEntidades();
+      else if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
     }
   }).catch((e) => {
     console.error(contexto, e);
@@ -140,7 +170,7 @@ function sincronizar(promesa, contexto) {
 
 const DB = {
   _cache: { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], entidades: [], cierres: [] },
-  _tieneEntidad: false, // la columna deudas.entidad existe en Supabase
+  _columnaEntidad: null, // ¿existe la columna deudas.entidad en Supabase? true / false / null = no se sabe
 
   // Carga completa desde Supabase — se llama una vez al iniciar sesión, antes de
   // mostrar cualquier dato. Lanza si falla (el llamador debe mostrar "sin conexión").
@@ -156,7 +186,8 @@ const DB = {
     ]);
     for (const r of [rd, rp, ri, rg, re, rc]) if (r.error) throw r.error;
     this._cache.entidades = ren.error ? [] : ren.data.map(r => r.nombre).sort((a, b) => a.localeCompare(b));
-    this._tieneEntidad = rd.data.length > 0 ? ('entidad' in rd.data[0]) : !ren.error;
+    // Con deudas cargadas se sabe seguro si la columna existe; sin deudas, se infiere de la tabla.
+    this._columnaEntidad = rd.data.length > 0 ? ('entidad' in rd.data[0]) : (ren.error ? null : true);
     this._cache.deudas = rd.data.map(rowToDeuda);
     this._cache.pagos = rp.data.map(rowToPago);
     this._cache.ingresos = ri.data.map(rowToIngreso);
@@ -173,7 +204,7 @@ const DB = {
     this._cache.deudas = list;
     const aBorrar = [...antes].filter(id => !ahora.has(id));
     if (aBorrar.length) sincronizar(supabaseClient.from('deudas').delete().in('id', aBorrar), 'saveDeudas:delete');
-    if (list.length) sincronizar(supabaseClient.from('deudas').upsert(list.map(deudaToRow)), 'saveDeudas:upsert');
+    if (list.length) sincronizarDeudas(filas => supabaseClient.from('deudas').upsert(filas), list, 'saveDeudas:upsert');
   },
   getDeuda(id) { return this._cache.deudas.find(d => d.id === id) || null; },
   addDeuda(deuda) {
@@ -184,14 +215,14 @@ const DB = {
       ...deuda,
     };
     this._cache.deudas.push(nueva);
-    sincronizar(supabaseClient.from('deudas').insert(deudaToRow(nueva)), 'addDeuda');
+    sincronizarDeudas(filas => supabaseClient.from('deudas').insert(filas[0]), [nueva], 'addDeuda');
     return nueva;
   },
   updateDeuda(id, patch) {
     const idx = this._cache.deudas.findIndex(d => d.id === id);
     if (idx === -1) return null;
     this._cache.deudas[idx] = { ...this._cache.deudas[idx], ...patch };
-    sincronizar(supabaseClient.from('deudas').update(deudaToRow(this._cache.deudas[idx])).eq('id', id), 'updateDeuda');
+    sincronizarDeudas(filas => supabaseClient.from('deudas').update(filas[0]).eq('id', id), [this._cache.deudas[idx]], 'updateDeuda');
     return this._cache.deudas[idx];
   },
   deleteDeuda(id) {
