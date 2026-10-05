@@ -1462,11 +1462,11 @@ function filasInformeMes(mes, empresasSel) {
     const esCuotas = deuda.tipo === 'cuotas';
     const pagadas = esCuotas ? DB.cuotasPagadasHasta(deuda.id, mes) : null;
     const monto = Number(pago.gasto);
-    // Crédito cuyas cuotas ya estaban todas pagadas antes de este mes (y este mes no se pagó
-    // nada): no debía nada, no aparece.
-    if (!pago.pagado && (monto === 0 || (esCuotas && deuda.cuotasTotales != null
-        && DB.cuotaAcumuladaAntesDe(deuda.id, mes) >= deuda.cuotasTotales))) return;
-    const estado = pago.pagado ? 'Pagado' : 'Pendiente';
+    // Crédito cuyas cuotas ya estaban todas pagadas antes de este mes: sigue apareciendo (el
+    // informe es completo) pero como "Completa", no como pendiente.
+    const completa = !pago.pagado && (monto === 0 || (esCuotas && deuda.cuotasTotales != null
+      && DB.cuotaAcumuladaAntesDe(deuda.id, mes) >= deuda.cuotasTotales));
+    const estado = pago.pagado ? 'Pagado' : (completa ? 'Completa' : 'Pendiente');
     if (!grupos[empresa]) grupos[empresa] = [];
     grupos[empresa].push({
       detalle: deuda.detalle,
@@ -1475,7 +1475,7 @@ function filasInformeMes(mes, empresasSel) {
       pagado: !!pago.pagado,
       cuotas: esCuotas ? `${pagadas}/${deuda.cuotasTotales ?? '?'}` : 'Recurrente',
       estado,
-      color: pago.pagado ? [0.1, 0.55, 0.25] : [0.8, 0.15, 0.15],
+      color: pago.pagado ? [0.1, 0.55, 0.25] : (completa ? [0.5, 0.25, 0.7] : [0.8, 0.15, 0.15]),
     });
   });
   Object.values(grupos).forEach(filas => filas.sort((a, b) => a.detalle.localeCompare(b.detalle)));
