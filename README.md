@@ -75,6 +75,14 @@ Esos dos valores son públicos por diseño (los usa cualquiera que abra la app e
 la seguridad real la dan las políticas de la base de datos (RLS) del script SQL — sin haber
 iniciado sesión, esas claves no permiten leer ni escribir nada.
 
+### Si ya tenías el proyecto creado: activar "Tarjeta / entidad financiera"
+
+Para poder asignar a cada deuda el banco o la tarjeta con la que se compró (Ajustes → Tarjetas /
+entidades financieras), corre **una vez** [`supabase/migracion-entidades.sql`](supabase/migracion-entidades.sql)
+en Supabase → SQL Editor → New query → Run. Hasta que lo hagas, el resto de la app funciona igual y
+solo falla guardar una deuda con tarjeta asignada (avisa con un mensaje). Los proyectos nuevos ya
+traen esto en `schema.sql`.
+
 ## ⚠️ Importante: usa siempre el ícono de la pantalla de inicio
 
 Entra siempre por el ícono que agregaste a tu pantalla de inicio, no por una pestaña de Safari

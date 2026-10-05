@@ -590,7 +590,7 @@ function deudaCardHtml(deuda, pago) {
   return `<div class="deuda-card" data-open-id="${deuda.id}">
     <div class="deuda-icon" id="deuda-icon-${deuda.id}">${escapeHtml(deuda.icono || '📌')}</div>
     <div class="deuda-info">
-      <div class="deuda-empresa">${escapeHtml(deuda.empresa)}</div>
+      <div class="deuda-empresa">${escapeHtml(deuda.empresa)}${deuda.entidad ? ` · 💳 ${escapeHtml(deuda.entidad)}` : ''}</div>
       <div class="deuda-detalle">${escapeHtml(deuda.detalle)}</div>
       <div class="deuda-meta">
         <span class="valor">${Utils.formatCLP(pago ? pago.gasto : deuda.valorCuota)}</span>
@@ -658,7 +658,8 @@ function attachDeudaCardEvents(container) {
 
 function openDeudaForm(deuda) {
   const editing = !!deuda;
-  const d = deuda || { empresa: '', detalle: '', icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '', fechaInicio: currentMonth };
+  const d = deuda || { empresa: '', detalle: '', icono: '📌', tipo: 'recurrente', cuotasTotales: '', valorCuota: '', cuotasPagadasBase: 0, notas: '', fechaInicio: currentMonth, entidad: '' };
+  const entidades = DB.getEntidades();
   const mesesInicio = [];
   for (let m = Utils.shiftMonth(Utils.monthKey(), -60); Utils.compareMonth(m, Utils.shiftMonth(Utils.monthKey(), 12)) <= 0; m = Utils.shiftMonth(m, 1)) mesesInicio.push(m);
   if (d.fechaInicio && !mesesInicio.includes(d.fechaInicio)) mesesInicio.push(d.fechaInicio);
@@ -681,6 +682,16 @@ function openDeudaForm(deuda) {
         <option value="__nueva__" ${empresaEsNueva ? 'selected' : ''}>+ Nueva empresa…</option>
       </select>
       <input type="text" id="f-empresa-nueva" value="${empresaEsNueva ? escapeAttr(d.empresa) : ''}" placeholder="Nombre de la nueva empresa" style="margin-top:8px; ${empresaEsNueva ? '' : 'display:none'}">
+    </div>
+    <div class="form-group">
+      <label>Tarjeta / entidad financiera (opcional)</label>
+      <select id="f-entidad">
+        <option value="">— Ninguna —</option>
+        ${entidades.map(e => `<option value="${escapeAttr(e)}" ${e === d.entidad ? 'selected' : ''}>${escapeHtml(e)}</option>`).join('')}
+        <option value="__nueva__">+ Nueva tarjeta / entidad…</option>
+      </select>
+      <input type="text" id="f-entidad-nueva" placeholder="Ej: BCI Visa, CMR Falabella" style="margin-top:8px; display:none">
+      <p class="muted" style="margin:6px 0 0">Con qué tarjeta o banco se compró (útil en deudas de terceros).</p>
     </div>
     <div class="form-group">
       <label>Detalle</label>
@@ -756,6 +767,9 @@ function openDeudaForm(deuda) {
   document.getElementById('f-empresa').addEventListener('change', (e) => {
     document.getElementById('f-empresa-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
   });
+  document.getElementById('f-entidad').addEventListener('change', (e) => {
+    document.getElementById('f-entidad-nueva').style.display = e.target.value === '__nueva__' ? '' : 'none';
+  });
 
   const btnGuardarDeuda = document.getElementById('btnGuardarDeuda');
   let fotoId = d.fotoId || null;
@@ -794,11 +808,14 @@ function openDeudaForm(deuda) {
 
     DB.addEmpresa(empresa);
 
+    const entidadSel = document.getElementById('f-entidad').value;
+    const entidad = entidadSel === '__nueva__' ? document.getElementById('f-entidad-nueva').value.trim() : entidadSel;
+    if (entidad) DB.addEntidad(entidad);
     const fechaInicio = document.getElementById('f-fechaInicio').value;
     const cuotasPagadasBase = tipo === 'cuotas' ? (parseInt(document.getElementById('f-cuotasPagadasBase').value, 10) || 0) : 0;
 
     if (editing) {
-      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas, fotoId, fechaInicio, cuotasPagadasBase });
+      DB.updateDeuda(deuda.id, { empresa, detalle, icono, tipo, cuotasTotales, valorCuota, notas, fotoId, fechaInicio, cuotasPagadasBase, entidad });
       const pagoActual = DB.getPago(deuda.id, currentMonth);
       if (pagoActual && !pagoActual.pagado) {
         DB.upsertPago({ ...pagoActual, gasto: valorCuota });
@@ -807,7 +824,7 @@ function openDeudaForm(deuda) {
       if (tipo === 'cuotas') DB.recalcularAcumulados(deuda.id);
       showToast('Deuda actualizada');
     } else {
-      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio, fotoId });
+      const nueva = DB.addDeuda({ empresa, detalle, icono, tipo, cuotasTotales, valorCuota, cuotasPagadasBase, fechaInicio, fotoId, entidad });
       DB.ensureDesdeInicio(nueva.id, Utils.monthKey());
       DB.ensureMes(currentMonth);
       showToast('Deuda agregada');
@@ -815,6 +832,7 @@ function openDeudaForm(deuda) {
     closeSheet();
     refreshCategoriaFilterOptions();
     renderMaestros();
+    renderEntidades();
     renderAll();
   }));
 }
@@ -828,7 +846,7 @@ function openDeudaDetail(id) {
 
   openSheet(`
     <h2>${escapeHtml(deuda.icono || '📌')} ${escapeHtml(deuda.detalle)}</h2>
-    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}${deuda.fechaInicio ? ` · desde ${Utils.monthLabel(deuda.fechaInicio)}` : ''}</p>
+    <p class="muted" style="margin-top:-10px">${escapeHtml(deuda.empresa)}${deuda.entidad ? ` · 💳 ${escapeHtml(deuda.entidad)}` : ''}${deuda.fechaInicio ? ` · desde ${Utils.monthLabel(deuda.fechaInicio)}` : ''}</p>
     ${!deuda.activa ? `<div class="form-group"><span class="badge-estado reembolsado">Archivada el ${formatFechaCorta(deuda.fechaArchivo.slice(0, 10))}</span></div>` : ''}
     ${deuda.fotoId ? `<div class="form-group"><div id="previewFotoDeudaDetalle"><div class="photo-preview-empty">📷</div></div></div>` : ''}
     <div class="sheet-actions">
@@ -1370,9 +1388,9 @@ function generarInformeExcel() {
 
   const hojaDeudas = {
     nombre: 'Deudas',
-    encabezados: ['Empresa', 'Detalle', 'Tipo', 'Cuotas Totales', 'Valor Cuota', 'Cuotas Pagadas (base)', 'Estado', 'Fecha Archivo'],
+    encabezados: ['Empresa', 'Tarjeta / Entidad', 'Detalle', 'Tipo', 'Cuotas Totales', 'Valor Cuota', 'Cuotas Pagadas (base)', 'Estado', 'Fecha Archivo'],
     filas: deudas.map(d => [
-      d.empresa, d.detalle, d.tipo === 'cuotas' ? 'Crédito en cuotas' : 'Gasto recurrente',
+      d.empresa, d.entidad || '', d.detalle, d.tipo === 'cuotas' ? 'Crédito en cuotas' : 'Gasto recurrente',
       d.cuotasTotales ?? '', d.valorCuota, d.cuotasPagadasBase ?? 0,
       d.activa ? 'Activa' : 'Archivada', d.fechaArchivo ? d.fechaArchivo.slice(0, 10) : '',
     ]),
@@ -1447,6 +1465,7 @@ function filasInformeMes(mes, empresasSel) {
     if (!grupos[empresa]) grupos[empresa] = [];
     grupos[empresa].push({
       detalle: deuda.detalle,
+      entidad: deuda.entidad || '',
       monto,
       pagado: !!pago.pagado,
       cuotas: esCuotas ? `${pagadas}/${deuda.cuotasTotales ?? '?'}` : 'Recurrente',
@@ -1469,7 +1488,7 @@ function generarInformePdf(mes, empresasSel, todasLasEmpresas) {
   const M = 40;
   const FILA = 18;
   const GRIS = [0.45, 0.45, 0.5];
-  const col = { detalle: M + 8, montoDer: M + 296, cuotasCentro: M + 352, estado: M + 410 };
+  const col = { detalle: M + 8, entidad: M + 158, montoDer: M + 326, cuotasCentro: M + 378, estado: M + 428 };
   const limiteY = doc.alto - 50;
   let y = 56;
 
@@ -1504,6 +1523,7 @@ function generarInformePdf(mes, empresasSel, todasLasEmpresas) {
     doc.rect(M, y, 515, FILA, { relleno: [0.82, 0.82, 0.9] });
     const t = { size: 8.5, bold: true };
     doc.texto(col.detalle, y + 12.5, 'DETALLE', t);
+    doc.texto(col.entidad, y + 12.5, 'TARJETA / ENTIDAD', t);
     doc.texto(col.montoDer, y + 12.5, 'MONTO', { ...t, align: 'right' });
     doc.texto(col.cuotasCentro, y + 12.5, 'CUOTAS PAGADAS', { ...t, align: 'center' });
     doc.texto(col.estado, y + 12.5, 'ESTADO', t);
@@ -1530,10 +1550,11 @@ function generarInformePdf(mes, empresasSel, todasLasEmpresas) {
       y += FILA + 4;
       filas.forEach(f => {
         asegurar(FILA);
-        doc.texto(col.detalle, y + 12.5, doc.ajustar(f.detalle, 200, 9.5, false), { size: 9.5 });
+        doc.texto(col.detalle, y + 12.5, doc.ajustar(f.detalle, 144, 9.5, false), { size: 9.5 });
+        doc.texto(col.entidad, y + 12.5, f.entidad ? doc.ajustar(f.entidad, 110, 9.5, false) : '-', { size: 9.5, color: f.entidad ? [0, 0, 0] : GRIS });
         doc.texto(col.montoDer, y + 12.5, Utils.formatCLP(f.monto), { size: 9.5, align: 'right' });
         doc.texto(col.cuotasCentro, y + 12.5, f.cuotas, { size: 9.5, align: 'center', color: f.cuotas === 'Recurrente' ? GRIS : [0, 0, 0] });
-        doc.texto(col.estado, y + 12.5, doc.ajustar(f.estado, 105, 9.5, true), { size: 9.5, bold: true, color: f.color });
+        doc.texto(col.estado, y + 12.5, doc.ajustar(f.estado, 85, 9.5, true), { size: 9.5, bold: true, color: f.color });
         doc.linea(M, y + FILA, M + 515, y + FILA);
         y += FILA;
       });
@@ -1814,7 +1835,51 @@ function renderMaestros() {
   });
 }
 
+function renderEntidades() {
+  const el = document.getElementById('entidadesList');
+  const entidades = DB.getEntidades();
+  el.innerHTML = entidades.length ? entidades.map(e => `
+    <div class="maestro-row">
+      <span>${escapeHtml(e)}</span>
+      <div class="maestro-actions">
+        <button class="icon-action" data-edit-entidad="${escapeAttr(e)}">✎</button>
+        <button class="icon-action" data-del-entidad="${escapeAttr(e)}">✕</button>
+      </div>
+    </div>
+  `).join('') : '<div class="empty-state">Aún no tienes tarjetas o entidades registradas.</div>';
+
+  el.querySelectorAll('[data-edit-entidad]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.editEntidad;
+      openTextPrompt('Renombrar tarjeta / entidad', nombre, (nuevo) => {
+        DB.renameEntidad(nombre, nuevo);
+        renderEntidades();
+        renderAll();
+        showToast('Tarjeta / entidad actualizada');
+      });
+    });
+  });
+  el.querySelectorAll('[data-del-entidad]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nombre = btn.dataset.delEntidad;
+      if (confirm(`¿Quitar "${nombre}" de la lista? Las deudas que ya la usan no se modifican.`)) {
+        DB.deleteEntidad(nombre);
+        renderEntidades();
+        showToast('Quitada de la lista');
+      }
+    });
+  });
+}
+
 function wireMaestros() {
+  document.getElementById('btnAgregarEntidad').addEventListener('click', () => {
+    openTextPrompt('Nueva tarjeta / entidad', '', (nombre) => {
+      DB.addEntidad(nombre);
+      renderEntidades();
+      showToast('Tarjeta / entidad agregada');
+    });
+  });
+  renderEntidades();
   document.getElementById('btnAgregarEmpresa').addEventListener('click', () => {
     openTextPrompt('Nueva empresa', '', (nombre) => {
       DB.addEmpresa(nombre);

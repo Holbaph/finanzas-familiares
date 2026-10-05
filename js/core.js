@@ -61,19 +61,23 @@ const Utils = {
 
 // ---------- Conversión camelCase (JS) <-> snake_case (columnas Postgres) ----------
 function deudaToRow(d) {
-  return {
+  const row = {
     id: d.id, empresa: d.empresa, detalle: d.detalle, icono: d.icono, tipo: d.tipo,
     cuotas_totales: d.cuotasTotales, valor_cuota: d.valorCuota, cuotas_pagadas_base: d.cuotasPagadasBase,
     fecha_inicio: d.fechaInicio, activa: d.activa, fecha_archivo: d.fechaArchivo, notas: d.notas,
     foto_id: d.fotoId, creado_en: d.creadoEn,
   };
+  // La columna "entidad" solo existe si ya se corrió supabase/migracion-entidades.sql. Hasta
+  // entonces no se envía (salvo que haya una entidad asignada), para no romper el guardado.
+  if (d.entidad || DB._tieneEntidad) row.entidad = d.entidad || null;
+  return row;
 }
 function rowToDeuda(r) {
   return {
     id: r.id, empresa: r.empresa, detalle: r.detalle, icono: r.icono, tipo: r.tipo,
     cuotasTotales: r.cuotas_totales, valorCuota: Number(r.valor_cuota), cuotasPagadasBase: r.cuotas_pagadas_base,
     fechaInicio: r.fecha_inicio, activa: r.activa, fechaArchivo: r.fecha_archivo, notas: r.notas || '',
-    fotoId: r.foto_id, creadoEn: r.creado_en,
+    entidad: r.entidad || '', fotoId: r.foto_id, creadoEn: r.creado_en,
   };
 }
 function pagoToRow(p) {
@@ -121,7 +125,12 @@ function sincronizar(promesa, contexto) {
   promesa.then(({ error }) => {
     if (error) {
       console.error(contexto, error);
-      if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
+      const falta = /entidad/i.test(`${error.message || ''} ${error.details || ''}`);
+      if (typeof showToast === 'function') {
+        showToast(falta
+          ? 'Falta correr el SQL de entidades en Supabase (supabase/migracion-entidades.sql)'
+          : 'No se pudo sincronizar con la nube (revisa tu conexión)');
+      }
     }
   }).catch((e) => {
     console.error(contexto, e);
@@ -130,20 +139,24 @@ function sincronizar(promesa, contexto) {
 }
 
 const DB = {
-  _cache: { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], cierres: [] },
+  _cache: { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], entidades: [], cierres: [] },
+  _tieneEntidad: false, // la columna deudas.entidad existe en Supabase
 
   // Carga completa desde Supabase — se llama una vez al iniciar sesión, antes de
   // mostrar cualquier dato. Lanza si falla (el llamador debe mostrar "sin conexión").
   async cargarTodoDesdeSupabase() {
-    const [rd, rp, ri, rg, re, rc] = await Promise.all([
+    const [rd, rp, ri, rg, re, rc, ren] = await Promise.all([
       supabaseClient.from('deudas').select('*'),
       supabaseClient.from('pagos').select('*'),
       supabaseClient.from('ingresos').select('*'),
       supabaseClient.from('gastos').select('*'),
       supabaseClient.from('empresas').select('*'),
       supabaseClient.from('cierres').select('*'),
+      supabaseClient.from('entidades').select('*'), // opcional: puede no existir aún
     ]);
     for (const r of [rd, rp, ri, rg, re, rc]) if (r.error) throw r.error;
+    this._cache.entidades = ren.error ? [] : ren.data.map(r => r.nombre).sort((a, b) => a.localeCompare(b));
+    this._tieneEntidad = rd.data.length > 0 ? ('entidad' in rd.data[0]) : !ren.error;
     this._cache.deudas = rd.data.map(rowToDeuda);
     this._cache.pagos = rp.data.map(rowToPago);
     this._cache.ingresos = ri.data.map(rowToIngreso);
@@ -165,7 +178,7 @@ const DB = {
   getDeuda(id) { return this._cache.deudas.find(d => d.id === id) || null; },
   addDeuda(deuda) {
     const nueva = {
-      id: Utils.uid(), empresa: '', detalle: '', icono: '📌', tipo: 'recurrente',
+      id: Utils.uid(), empresa: '', entidad: '', detalle: '', icono: '📌', tipo: 'recurrente',
       cuotasTotales: null, valorCuota: 0, cuotasPagadasBase: 0, fechaInicio: Utils.monthKey(),
       activa: true, fechaArchivo: null, notas: '', fotoId: null, creadoEn: new Date().toISOString(),
       ...deuda,
@@ -232,6 +245,38 @@ const DB = {
   },
   deleteEmpresa(nombre) {
     this.saveEmpresas(this.getEmpresas().filter(e => e !== nombre));
+  },
+
+  // ---------- Maestro de Tarjetas / Entidades financieras ----------
+  getEntidades() {
+    const enUso = [...new Set(this._cache.deudas.map(d => d.entidad).filter(Boolean))];
+    return Array.from(new Set([...this._cache.entidades, ...enUso])).sort((a, b) => a.localeCompare(b));
+  },
+  saveEntidades(list) {
+    const clean = Array.from(new Set(list.filter(Boolean)));
+    const antes = new Set(this._cache.entidades);
+    const ahora = new Set(clean);
+    this._cache.entidades = clean.sort((a, b) => a.localeCompare(b));
+    const aBorrar = [...antes].filter(n => !ahora.has(n));
+    if (aBorrar.length) sincronizar(supabaseClient.from('entidades').delete().in('nombre', aBorrar), 'saveEntidades:delete');
+    if (clean.length) sincronizar(supabaseClient.from('entidades').upsert(clean.map(nombre => ({ nombre }))), 'saveEntidades:upsert');
+  },
+  addEntidad(nombre) {
+    nombre = (nombre || '').trim();
+    if (!nombre) return;
+    const list = this.getEntidades();
+    if (!list.includes(nombre)) this.saveEntidades([...list, nombre]);
+  },
+  renameEntidad(oldName, newName) {
+    newName = (newName || '').trim();
+    const list = this.getEntidades();
+    if (!newName || oldName === newName || !list.includes(oldName)) return;
+    this.saveEntidades([...list.filter(e => e !== oldName), newName]);
+    this.saveDeudas(this._cache.deudas.map(d => d.entidad === oldName ? { ...d, entidad: newName } : d));
+  },
+  // Quitarla de la lista no cambia las deudas que ya la usan (siguen mostrándola).
+  deleteEntidad(nombre) {
+    this.saveEntidades(this.getEntidades().filter(e => e !== nombre));
   },
 
   // ---------- Pagos ----------
@@ -593,6 +638,7 @@ const DB = {
       gastos: this.getGastos(),
       meta: this.getMeta(),
       empresas: this.getEmpresas(),
+      entidades: this.getEntidades(),
       cierres: this.getCierres(),
       pin: (typeof Lock !== 'undefined') ? Lock.getConfig() : null,
       biometric: (typeof Biometric !== 'undefined') ? Biometric.getConfig() : null,
@@ -607,6 +653,7 @@ const DB = {
     this.saveGastos(data.gastos || []);
     if (data.meta) this.setMeta(data.meta);
     if (data.empresas) this.saveEmpresas(data.empresas);
+    if (data.entidades) this.saveEntidades(data.entidades);
     if (data.cierres) this.saveCierres(data.cierres);
     if (data.pin && typeof Lock !== 'undefined') Lock.setConfig(data.pin);
     if (data.biometric && typeof Biometric !== 'undefined') Biometric.setConfig(data.biometric);
@@ -627,7 +674,8 @@ const DB = {
       borrarTabla('cierres', 'mes', '__ninguno__'),
     ]);
     for (const r of resultados) if (r.error) throw r.error;
-    this._cache = { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], cierres: [] };
+    await borrarTabla('entidades', 'nombre', '__ninguna__'); // opcional: si la tabla no existe se ignora
+    this._cache = { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], entidades: [], cierres: [] };
     localStorage.removeItem(STORAGE_KEYS.meta);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }
     if (typeof Biometric !== 'undefined') { Biometric.disable(); localStorage.removeItem(Biometric.KEY); }
