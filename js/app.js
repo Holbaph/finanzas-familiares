@@ -134,7 +134,7 @@ function init() {
   appStarted = true;
   DB.seedIfEmpty();
   DB.migrar();
-  const acumCorregidos = DB.recalcularAcumulados();
+  const acumCorregidos = DB.sanearPagos();
   currentMonth = DB.getMeta().mesActual || Utils.monthKey();
   DB.ensureMes(currentMonth);
   populateCategoriaFilter();
@@ -147,7 +147,7 @@ function init() {
   wireGastoTipoSegmented();
   wireThemeGrid();
   renderAll();
-  if (acumCorregidos > 0) showToast(`Se corrigieron ${acumCorregidos} cuotas pagadas desfasadas`);
+  if (acumCorregidos > 0) showToast(`Se corrigieron ${acumCorregidos} registros de pagos`);
 }
 
 function renderAll() {
@@ -1377,8 +1377,10 @@ function filasInformeMes(mes, empresasSel) {
     const esCuotas = deuda.tipo === 'cuotas';
     const pagadas = esCuotas ? DB.cuotasPagadasHasta(deuda.id, mes) : null;
     const monto = Number(pago.gasto);
-    const completa = esCuotas && deuda.cuotasTotales != null && pagadas >= deuda.cuotasTotales && monto === 0;
-    const estado = pago.pagado ? 'Pagado' : (completa ? 'Completa' : 'Pendiente');
+    // Crédito cuyas cuotas ya estaban todas pagadas antes de este mes: no debe nada, no aparece.
+    if (esCuotas && deuda.cuotasTotales != null && !pago.pagado
+        && DB.cuotaAcumuladaAntesDe(deuda.id, mes) >= deuda.cuotasTotales) return;
+    const estado = pago.pagado ? 'Pagado' : 'Pendiente';
     if (!grupos[empresa]) grupos[empresa] = [];
     grupos[empresa].push({
       detalle: deuda.detalle,
@@ -1386,7 +1388,7 @@ function filasInformeMes(mes, empresasSel) {
       pagado: !!pago.pagado,
       cuotas: esCuotas ? `${pagadas}/${deuda.cuotasTotales ?? '?'}` : 'Recurrente',
       estado,
-      color: pago.pagado ? [0.1, 0.55, 0.25] : (completa ? [0.5, 0.25, 0.7] : [0.8, 0.15, 0.15]),
+      color: pago.pagado ? [0.1, 0.55, 0.25] : [0.8, 0.15, 0.15],
     });
   });
   Object.values(grupos).forEach(filas => filas.sort((a, b) => a.detalle.localeCompare(b.detalle)));

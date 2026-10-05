@@ -192,7 +192,11 @@ const DB = {
     return this.getDeudas().filter(d => !d.activa).sort((a, b) => (b.fechaArchivo || '').localeCompare(a.fechaArchivo || ''));
   },
   archivarDeuda(id) {
-    return this.updateDeuda(id, { activa: false, fechaArchivo: new Date().toISOString() });
+    const r = this.updateDeuda(id, { activa: false, fechaArchivo: new Date().toISOString() });
+    // Lo archivado se da por pagado (cuenta saldada/cerrada).
+    this.liquidarArchivadas(id);
+    this.recalcularAcumulados(id);
+    return r;
   },
   reactivarDeuda(id) {
     return this.updateDeuda(id, { activa: true, fechaArchivo: null });
@@ -281,6 +285,46 @@ const DB = {
   cuotaAcumuladaAntesDe(deudaId, mes) {
     const deuda = this.getDeuda(deudaId);
     return deuda ? this._contarCuotas(deuda, mes, false) : 0;
+  },
+
+  // Toda deuda archivada se considera pagada: marca como pagado cualquier mes que haya
+  // quedado pendiente (p. ej. cuotas que ya estaban pagadas antes de usar la app).
+  liquidarArchivadas(deudaId) {
+    const cambios = [];
+    this._cache.pagos.forEach((p, i) => {
+      if (p.pagado || (deudaId && p.deudaId !== deudaId)) return;
+      const deuda = this.getDeuda(p.deudaId);
+      if (!deuda || deuda.activa) return;
+      this._cache.pagos[i] = { ...p, pagado: true, fechaPago: deuda.fechaArchivo || new Date().toISOString() };
+      cambios.push(this._cache.pagos[i]);
+    });
+    if (cambios.length) {
+      sincronizar(supabaseClient.from('pagos').upsert(cambios.map(pagoToRow), { onConflict: 'deuda_id,mes' }), 'liquidarArchivadas');
+    }
+    return cambios.length;
+  },
+
+  // Un crédito cuyas cuotas ya estaban todas pagadas antes de un mes no debe nada ese mes:
+  // deja ese pago en $0 (igual que ensureMes al crear meses nuevos).
+  cerrarCreditosCompletos() {
+    const cambios = [];
+    this._cache.pagos.forEach((p, i) => {
+      if (p.pagado || Number(p.gasto) === 0) return;
+      const deuda = this.getDeuda(p.deudaId);
+      if (!deuda || !deuda.activa || deuda.tipo !== 'cuotas' || deuda.cuotasTotales == null) return;
+      if (this._contarCuotas(deuda, p.mes, false) < deuda.cuotasTotales) return;
+      this._cache.pagos[i] = { ...p, gasto: 0 };
+      cambios.push(this._cache.pagos[i]);
+    });
+    if (cambios.length) {
+      sincronizar(supabaseClient.from('pagos').upsert(cambios.map(pagoToRow), { onConflict: 'deuda_id,mes' }), 'cerrarCreditosCompletos');
+    }
+    return cambios.length;
+  },
+
+  // Corrige de una vez los registros de pagos inconsistentes. Devuelve cuántos tocó.
+  sanearPagos() {
+    return this.liquidarArchivadas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
   },
 
   // Deja el campo guardado "cuotaPagadaAcumulada" de cada pago de un crédito (o de todos
