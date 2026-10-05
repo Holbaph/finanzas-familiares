@@ -322,9 +322,30 @@ const DB = {
     return cambios.length;
   },
 
+  // Un crédito con todas sus cuotas pagadas (3/3) se archiva solo, así no aparece en los
+  // meses siguientes. Queda visible solo en el mes en que se completó. Devuelve cuántos archivó.
+  archivarCompletas() {
+    let n = 0;
+    this._cache.deudas.filter(d => d.activa && d.tipo === 'cuotas' && d.cuotasTotales != null).forEach(d => {
+      if (this._contarCuotas(d, '9999-12', true) < d.cuotasTotales) return;
+      // Mes en que se completó: el del último pago marcado; si nunca hubo (ya venía
+      // pagado al registrarlo), el mes en que se registró.
+      const pagados = this.getPagosDeDeuda(d.id).filter(p => p.pagado);
+      const ultimo = pagados[pagados.length - 1];
+      let fecha;
+      if (ultimo) fecha = (ultimo.fechaPago && ultimo.fechaPago.slice(0, 7) === ultimo.mes) ? ultimo.fechaPago : `${ultimo.mes}-15T12:00:00.000Z`;
+      else fecha = `${d.fechaInicio}-15T12:00:00.000Z`;
+      this.updateDeuda(d.id, { activa: false, fechaArchivo: fecha });
+      this.liquidarArchivadas(d.id);
+      this.recalcularAcumulados(d.id);
+      n++;
+    });
+    return n;
+  },
+
   // Corrige de una vez los registros de pagos inconsistentes. Devuelve cuántos tocó.
   sanearPagos() {
-    return this.liquidarArchivadas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
+    return this.archivarCompletas() + this.liquidarArchivadas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
   },
 
   // Deja el campo guardado "cuotaPagadaAcumulada" de cada pago de un crédito (o de todos
@@ -382,7 +403,10 @@ const DB = {
       cuotaPagadaAcumulada: deuda.tipo === 'cuotas' ? pago.cuotaPagadaAcumulada : null,
     });
     // Recalcula este pago y los meses siguientes del mismo crédito (su acumulado cambia).
-    if (deuda.tipo === 'cuotas') this.recalcularAcumulados(deudaId);
+    if (deuda.tipo === 'cuotas') {
+      this.recalcularAcumulados(deudaId);
+      if (pagado) this.archivarCompletas(); // si era la última cuota, el crédito se archiva solo
+    }
   },
 
   // ---------- Ingresos ----------
