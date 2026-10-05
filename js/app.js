@@ -603,6 +603,13 @@ function deudaCardHtml(deuda, pago) {
   </div>`;
 }
 
+// Si al marcar un pago el crédito quedó completo, la app lo archiva sola: se avisa para que,
+// si fue un error, se pueda corregir (desmarcar el mes y reactivar la deuda desde su detalle).
+function avisarSiSeArchivo(id) {
+  const d = DB.getDeuda(id);
+  if (d && !d.activa) showToast('Crédito completo: se archivó solo. Si fue un error, reactívalo desde su detalle');
+}
+
 function attachDeudaCardEvents(container) {
   container.querySelectorAll('[data-toggle-id]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -611,6 +618,7 @@ function attachDeudaCardEvents(container) {
       const pago = DB.getPago(id, currentMonth);
       DB.marcarPago(id, currentMonth, !(pago && pago.pagado));
       renderAll();
+      avisarSiSeArchivo(id);
     });
   });
   container.querySelectorAll('[data-pagar-archivar-id]').forEach(btn => {
@@ -860,6 +868,7 @@ function openDeudaDetail(id) {
       DB.marcarPago(id, mes, !(pago && pago.pagado));
       renderAll();
       openDeudaDetail(id);
+      avisarSiSeArchivo(id);
     });
   });
   document.getElementById('btnEditarDeuda').addEventListener('click', () => openDeudaForm(deuda));
@@ -1646,6 +1655,7 @@ function abrirRevisionCuotas() {
       renderAll();
       abrirRevisionCuotas();
       showToast(pagar ? 'Cuota marcada como pagada' : 'Cuota marcada como pendiente');
+      avisarSiSeArchivo(id);
     });
   });
 }

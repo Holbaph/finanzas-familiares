@@ -353,9 +353,10 @@ const DB = {
 
   // Corrige de una vez los registros de pagos inconsistentes. Devuelve cuántos tocó.
   sanearPagos() {
-    // (No se re-liquidan las archivadas en cada arranque: así se puede corregir a mano un mes
-    // de una deuda archivada. Se liquidan solo al archivarlas.)
-    return this.archivarCompletas() + this.cerrarCreditosCompletos() + this.recalcularAcumulados();
+    // Solo recalcula valores derivados. No archiva, no liquida ni cambia montos por su cuenta
+    // en cada arranque, para que lo que corrijas a mano (reactivar, desmarcar un mes...) se
+    // respete. El archivado automático ocurre únicamente al pagar la última cuota.
+    return this.recalcularAcumulados();
   },
 
   // Deja el campo guardado "cuotaPagadaAcumulada" de cada pago de un crédito (o de todos
@@ -653,7 +654,7 @@ const DB = {
     if (!meta.migracion_base_cuotas_v1) {
       const BASES = {
         'Crédito Ford Aportillao': 14, 'Nintendo Switch2 BCI': 9, 'Plumón Rosen': 2,
-        'Refrigerador Mamá': 1, 'Botas Mili BCI': -1, 'Crédito Auto': 3,
+        'Refrigerador Mamá': 1, 'Crédito Auto': 3,
         'Camita Milita': 4, 'Muno Mili': 1, 'Ropita Mili Ripley': 1, 'Carrito Vacaciones': 1,
       };
       this._cache.deudas.forEach(d => {
@@ -663,6 +664,20 @@ const DB = {
         }
       });
       this.setMeta({ migracion_base_cuotas_v1: true });
+    }
+    // Corrección de un error mío: a "Botas Mili BCI" se le había puesto una base de -1, lo que
+    // la daba por completa (3/3) y archivada aunque falta la última cuota. Se deja con base 0,
+    // empezando en agosto (julio no era una cuota), activa, y con el último mes pendiente.
+    // Solo actúa si todavía tiene la base -1, así no pisa cambios hechos después.
+    const botas = this._cache.deudas.find(d => d.detalle === 'Botas Mili BCI' && d.tipo === 'cuotas' && d.cuotasPagadasBase === -1);
+    if (botas) {
+      this.updateDeuda(botas.id, { cuotasPagadasBase: 0, fechaInicio: '2026-08', activa: true, fechaArchivo: null });
+      // Julio (y antes) venía marcado pagado pero no era una cuota de este crédito.
+      this.getPagosDeDeuda(botas.id).filter(p => p.pagado && Utils.compareMonth(p.mes, '2026-08') < 0)
+        .forEach(p => this.upsertPago({ ...p, pagado: false, fechaPago: null }));
+      const ultimo = this.getPago(botas.id, '2026-10');
+      if (ultimo) this.upsertPago({ ...ultimo, pagado: false, fechaPago: null, gasto: botas.valorCuota });
+      this.recalcularAcumulados(botas.id);
     }
   },
 };
