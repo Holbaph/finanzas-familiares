@@ -60,58 +60,21 @@ const Utils = {
 };
 
 // ---------- Conversión camelCase (JS) <-> snake_case (columnas Postgres) ----------
-function deudaToRow(d, sinEntidad = false) {
-  const row = {
+function deudaToRow(d) {
+  // La tarjeta / entidad no es una columna: se guarda aparte (ver DB._guardarEntidades).
+  return {
     id: d.id, empresa: d.empresa, detalle: d.detalle, icono: d.icono, tipo: d.tipo,
     cuotas_totales: d.cuotasTotales, valor_cuota: d.valorCuota, cuotas_pagadas_base: d.cuotasPagadasBase,
     fecha_inicio: d.fechaInicio, activa: d.activa, fecha_archivo: d.fechaArchivo, notas: d.notas,
     foto_id: d.fotoId, creado_en: d.creadoEn,
   };
-  // La columna "entidad" solo existe si ya se corrió supabase/migracion-entidades.sql. Mientras
-  // se sepa que falta no se envía, así el resto de la deuda se guarda igual sin errores.
-  if (!sinEntidad && DB._columnaEntidad !== false && (d.entidad || DB._columnaEntidad === true)) {
-    row.entidad = d.entidad || null;
-  }
-  return row;
-}
-
-// Aviso (una sola vez por sesión) de que falta crear la columna/tabla de entidades en Supabase.
-let avisoSqlEntidadesMostrado = false;
-function avisarFaltaSqlEntidades() {
-  if (avisoSqlEntidadesMostrado) return;
-  avisoSqlEntidadesMostrado = true;
-  // Con un pequeño retraso: así no lo cierra el cierre del formulario que se acaba de guardar.
-  if (typeof mostrarAyudaSqlEntidades === 'function') setTimeout(mostrarAyudaSqlEntidades, 600);
-  else if (typeof showToast === 'function') showToast('Falta correr el SQL de entidades en Supabase');
-}
-const esErrorEntidad = (error) => /entidad/i.test(`${error.message || ''} ${error.details || ''} ${error.hint || ''}`);
-
-// Escribe deudas en Supabase. "hacer" recibe las filas y devuelve la promesa de Supabase. Si
-// la columna "entidad" no existe todavía, reintenta sin ella para que no se pierda el resto.
-function sincronizarDeudas(hacer, deudas, contexto) {
-  if (DB._columnaEntidad === false && deudas.some(d => d.entidad)) avisarFaltaSqlEntidades();
-  hacer(deudas.map(d => deudaToRow(d))).then(async ({ error }) => {
-    if (!error) return;
-    if (esErrorEntidad(error)) {
-      DB._columnaEntidad = false;
-      avisarFaltaSqlEntidades();
-      const r2 = await hacer(deudas.map(d => deudaToRow(d, true)));
-      if (!r2.error) return;
-      error = r2.error;
-    }
-    console.error(contexto, error);
-    if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
-  }).catch((e) => {
-    console.error(contexto, e);
-    if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
-  });
 }
 function rowToDeuda(r) {
   return {
     id: r.id, empresa: r.empresa, detalle: r.detalle, icono: r.icono, tipo: r.tipo,
     cuotasTotales: r.cuotas_totales, valorCuota: Number(r.valor_cuota), cuotasPagadasBase: r.cuotas_pagadas_base,
     fechaInicio: r.fecha_inicio, activa: r.activa, fechaArchivo: r.fecha_archivo, notas: r.notas || '',
-    entidad: r.entidad || '', fotoId: r.foto_id, creadoEn: r.creado_en,
+    entidad: '', fotoId: r.foto_id, creadoEn: r.creado_en,
   };
 }
 function pagoToRow(p) {
@@ -159,8 +122,7 @@ function sincronizar(promesa, contexto) {
   promesa.then(({ error }) => {
     if (error) {
       console.error(contexto, error);
-      if (esErrorEntidad(error)) avisarFaltaSqlEntidades();
-      else if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
+      if (typeof showToast === 'function') showToast('No se pudo sincronizar con la nube (revisa tu conexión)');
     }
   }).catch((e) => {
     console.error(contexto, e);
@@ -170,7 +132,24 @@ function sincronizar(promesa, contexto) {
 
 const DB = {
   _cache: { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], entidades: [], cierres: [] },
-  _columnaEntidad: null, // ¿existe la columna deudas.entidad en Supabase? true / false / null = no se sabe
+
+  // Las tarjetas / entidades financieras (la lista y cuál tiene cada deuda) se guardan en un
+  // solo registro de la tabla "meta" que ya existe en Supabase (clave "entidades_v1"), así no
+  // hace falta modificar la base de datos.
+  CLAVE_ENTIDADES: 'entidades_v1',
+  _guardarEntidades() {
+    const porDeuda = {};
+    this._cache.deudas.forEach(d => { if (d.entidad) porDeuda[d.id] = d.entidad; });
+    sincronizar(
+      supabaseClient.from('meta').upsert({ clave: this.CLAVE_ENTIDADES, valor: { lista: this.getEntidades(), porDeuda } }),
+      'guardarEntidades'
+    );
+  },
+  // Junta varios cambios seguidos en una sola escritura.
+  _programarGuardarEntidades() {
+    clearTimeout(this._tmrEntidades);
+    this._tmrEntidades = setTimeout(() => this._guardarEntidades(), 400);
+  },
 
   // Carga completa desde Supabase — se llama una vez al iniciar sesión, antes de
   // mostrar cualquier dato. Lanza si falla (el llamador debe mostrar "sin conexión").
@@ -182,13 +161,14 @@ const DB = {
       supabaseClient.from('gastos').select('*'),
       supabaseClient.from('empresas').select('*'),
       supabaseClient.from('cierres').select('*'),
-      supabaseClient.from('entidades').select('*'), // opcional: puede no existir aún
+      supabaseClient.from('meta').select('*').eq('clave', this.CLAVE_ENTIDADES),
     ]);
     for (const r of [rd, rp, ri, rg, re, rc]) if (r.error) throw r.error;
-    this._cache.entidades = ren.error ? [] : ren.data.map(r => r.nombre).sort((a, b) => a.localeCompare(b));
-    // Con deudas cargadas se sabe seguro si la columna existe; sin deudas, se infiere de la tabla.
-    this._columnaEntidad = rd.data.length > 0 ? ('entidad' in rd.data[0]) : (ren.error ? null : true);
-    this._cache.deudas = rd.data.map(rowToDeuda);
+    // Tarjetas / entidades (opcional: si no hay registro todavía, simplemente no hay ninguna).
+    const docEntidades = (!ren.error && ren.data && ren.data[0] && ren.data[0].valor) || {};
+    const porDeuda = docEntidades.porDeuda || {};
+    this._cache.entidades = Array.isArray(docEntidades.lista) ? docEntidades.lista.slice().sort((a, b) => a.localeCompare(b)) : [];
+    this._cache.deudas = rd.data.map(rowToDeuda).map(d => ({ ...d, entidad: porDeuda[d.id] || '' }));
     this._cache.pagos = rp.data.map(rowToPago);
     this._cache.ingresos = ri.data.map(rowToIngreso);
     this._cache.gastos = rg.data.map(rowToGasto);
@@ -204,7 +184,8 @@ const DB = {
     this._cache.deudas = list;
     const aBorrar = [...antes].filter(id => !ahora.has(id));
     if (aBorrar.length) sincronizar(supabaseClient.from('deudas').delete().in('id', aBorrar), 'saveDeudas:delete');
-    if (list.length) sincronizarDeudas(filas => supabaseClient.from('deudas').upsert(filas), list, 'saveDeudas:upsert');
+    if (list.length) sincronizar(supabaseClient.from('deudas').upsert(list.map(deudaToRow)), 'saveDeudas:upsert');
+    this._programarGuardarEntidades();
   },
   getDeuda(id) { return this._cache.deudas.find(d => d.id === id) || null; },
   addDeuda(deuda) {
@@ -215,14 +196,16 @@ const DB = {
       ...deuda,
     };
     this._cache.deudas.push(nueva);
-    sincronizarDeudas(filas => supabaseClient.from('deudas').insert(filas[0]), [nueva], 'addDeuda');
+    sincronizar(supabaseClient.from('deudas').insert(deudaToRow(nueva)), 'addDeuda');
+    if (nueva.entidad) this._programarGuardarEntidades();
     return nueva;
   },
   updateDeuda(id, patch) {
     const idx = this._cache.deudas.findIndex(d => d.id === id);
     if (idx === -1) return null;
     this._cache.deudas[idx] = { ...this._cache.deudas[idx], ...patch };
-    sincronizarDeudas(filas => supabaseClient.from('deudas').update(filas[0]).eq('id', id), [this._cache.deudas[idx]], 'updateDeuda');
+    sincronizar(supabaseClient.from('deudas').update(deudaToRow(this._cache.deudas[idx])).eq('id', id), 'updateDeuda');
+    if ('entidad' in patch) this._programarGuardarEntidades();
     return this._cache.deudas[idx];
   },
   deleteDeuda(id) {
@@ -230,6 +213,7 @@ const DB = {
     this._cache.deudas = this._cache.deudas.filter(d => d.id !== id);
     this._cache.pagos = this._cache.pagos.filter(p => p.deudaId !== id);
     sincronizar(supabaseClient.from('deudas').delete().eq('id', id), 'deleteDeuda');
+    if (deuda && deuda.entidad) this._programarGuardarEntidades();
     if (deuda && deuda.fotoId && typeof Photos !== 'undefined') Photos.delete(deuda.fotoId);
   },
   getDeudasArchivadas() {
@@ -285,12 +269,8 @@ const DB = {
   },
   saveEntidades(list) {
     const clean = Array.from(new Set(list.filter(Boolean)));
-    const antes = new Set(this._cache.entidades);
-    const ahora = new Set(clean);
     this._cache.entidades = clean.sort((a, b) => a.localeCompare(b));
-    const aBorrar = [...antes].filter(n => !ahora.has(n));
-    if (aBorrar.length) sincronizar(supabaseClient.from('entidades').delete().in('nombre', aBorrar), 'saveEntidades:delete');
-    if (clean.length) sincronizar(supabaseClient.from('entidades').upsert(clean.map(nombre => ({ nombre }))), 'saveEntidades:upsert');
+    this._programarGuardarEntidades();
   },
   addEntidad(nombre) {
     nombre = (nombre || '').trim();
@@ -705,7 +685,8 @@ const DB = {
       borrarTabla('cierres', 'mes', '__ninguno__'),
     ]);
     for (const r of resultados) if (r.error) throw r.error;
-    await borrarTabla('entidades', 'nombre', '__ninguna__'); // opcional: si la tabla no existe se ignora
+    clearTimeout(this._tmrEntidades);
+    await supabaseClient.from('meta').delete().eq('clave', this.CLAVE_ENTIDADES); // tarjetas / entidades
     this._cache = { deudas: [], pagos: [], ingresos: [], gastos: [], empresas: [], entidades: [], cierres: [] };
     localStorage.removeItem(STORAGE_KEYS.meta);
     if (typeof Lock !== 'undefined') { Lock.disable(); localStorage.removeItem(Lock.KEY); }

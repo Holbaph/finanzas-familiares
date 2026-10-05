@@ -33,6 +33,9 @@ Publicada en: **https://holbaph.github.io/finanzas-familiares/**
   - **Foto (boleta, producto, contrato...)**: opcional, tocable para verla ampliada.
   - Totales por empresa: al filtrar aparece cuánto debes a esa empresa; sin filtro, cada grupo
     ya muestra su propio total.
+- **Tarjeta / entidad financiera**: a cada deuda se le puede asignar el banco o la tarjeta con la
+  que se compró (lista editable en Ajustes → Tarjetas / entidades financieras). Aparece en la
+  lista de deudas y como columna en el informe PDF. No requiere modificar la base de datos.
 - **Gastos → Consumo propio**: gastos del día a día, por categoría (comida, transporte, etc.).
 - **Gastos → Por rendir a la empresa**: gastos que pagas tú y le rendirás cuentas a tu trabajo,
   con foto de la boleta, estados **Pendiente → Rendido → Reembolsado**, y foto del comprobante
@@ -74,14 +77,6 @@ ti (requiere tu cuenta), pero dejé todo listo para que sea rápido:
 Esos dos valores son públicos por diseño (los usa cualquiera que abra la app en su navegador);
 la seguridad real la dan las políticas de la base de datos (RLS) del script SQL — sin haber
 iniciado sesión, esas claves no permiten leer ni escribir nada.
-
-### Si ya tenías el proyecto creado: activar "Tarjeta / entidad financiera"
-
-Para poder asignar a cada deuda el banco o la tarjeta con la que se compró (Ajustes → Tarjetas /
-entidades financieras), corre **una vez** [`supabase/migracion-entidades.sql`](supabase/migracion-entidades.sql)
-en Supabase → SQL Editor → New query → Run. Hasta que lo hagas, el resto de la app funciona igual y
-solo falla guardar una deuda con tarjeta asignada (avisa con un mensaje). Los proyectos nuevos ya
-traen esto en `schema.sql`.
 
 ## ⚠️ Importante: usa siempre el ícono de la pantalla de inicio
 

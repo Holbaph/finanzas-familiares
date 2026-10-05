@@ -21,7 +21,6 @@ create table if not exists deudas (
   fecha_archivo timestamptz,
   notas text default '',
   foto_id text,
-  entidad text,
   creado_en timestamptz default now()
 );
 
@@ -65,11 +64,6 @@ create table if not exists empresas (
   nombre text primary key
 );
 
--- Tarjetas / entidades financieras con las que se compra (ej. "BCI Visa", "CMR Falabella").
-create table if not exists entidades (
-  nombre text primary key
-);
-
 create table if not exists cierres (
   mes text primary key,
   saldo_final numeric not null default 0,
@@ -101,7 +95,6 @@ alter table pagos enable row level security;
 alter table ingresos enable row level security;
 alter table gastos enable row level security;
 alter table empresas enable row level security;
-alter table entidades enable row level security;
 alter table cierres enable row level security;
 alter table meta enable row level security;
 
@@ -119,9 +112,6 @@ create policy "autenticados_todo" on gastos for all using (auth.role() = 'authen
 
 drop policy if exists "autenticados_todo" on empresas;
 create policy "autenticados_todo" on empresas for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-
-drop policy if exists "autenticados_todo" on entidades;
-create policy "autenticados_todo" on entidades for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 drop policy if exists "autenticados_todo" on cierres;
 create policy "autenticados_todo" on cierres for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

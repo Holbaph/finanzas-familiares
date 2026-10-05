@@ -1840,62 +1840,6 @@ function renderMaestros() {
   });
 }
 
-const SQL_ENTIDADES = `alter table deudas add column if not exists entidad text;
-
-create table if not exists entidades (
-  nombre text primary key
-);
-
-alter table entidades enable row level security;
-
-drop policy if exists "autenticados_todo" on entidades;
-create policy "autenticados_todo" on entidades for all
-  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');`;
-
-// Guía paso a paso (con el SQL listo para copiar) cuando falta crear la columna/tabla de
-// tarjetas / entidades en Supabase. Se muestra solo una vez por sesión (ver core.js).
-function mostrarAyudaSqlEntidades() {
-  const ref = (typeof SUPABASE_URL === 'string' && /^https:\/\/([^.]+)\.supabase\.co/.exec(SUPABASE_URL) || [])[1];
-  const enlace = ref ? `https://supabase.com/dashboard/project/${ref}/sql/new` : 'https://supabase.com/dashboard';
-  openSheet(`
-    <h2>Falta un paso en Supabase</h2>
-    <p class="muted" style="margin-top:-10px">Para guardar la tarjeta / entidad de una deuda hay que crear una columna nueva en tu base de datos. Se hace <strong>una sola vez</strong>. Mientras tanto el resto de la deuda se guardó bien; la tarjeta solo queda en este momento y se perderá al recargar.</p>
-    <div class="form-group">
-      <label>1. Copia el SQL</label>
-      <button class="btn btn-primary full" id="btnCopiarSql">Copiar SQL</button>
-    </div>
-    <div class="form-group">
-      <label>2. Pégalo y ejecútalo en Supabase</label>
-      <a class="btn btn-secondary full" id="lnkAbrirSql" href="${enlace}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:block">Abrir el SQL Editor de Supabase</a>
-      <p class="muted" style="margin:6px 0 0">Pega el SQL en el recuadro y presiona <strong>Run</strong>. Debe decir "Success".</p>
-    </div>
-    <div class="form-group">
-      <label>3. Vuelve y recarga</label>
-      <button class="btn btn-secondary full" id="btnSqlListo">Ya lo ejecuté, recargar la app</button>
-      <p class="muted" style="margin:6px 0 0">Después vuelve a elegir la tarjeta en las deudas que ya habías editado.</p>
-    </div>
-    <details style="margin-bottom:14px"><summary class="muted">Ver el SQL</summary>
-      <pre style="white-space:pre-wrap;font-size:12px;-webkit-user-select:text;user-select:text;background:var(--bg-elevated);padding:10px;border-radius:10px">${escapeHtml(SQL_ENTIDADES)}</pre>
-    </details>
-    <div class="sheet-actions"><button class="btn btn-secondary full" id="btnCerrarAyudaSql">Cerrar</button></div>
-  `);
-  document.getElementById('btnCopiarSql').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(SQL_ENTIDADES);
-    } catch (e) {
-      const ta = document.createElement('textarea');
-      ta.value = SQL_ENTIDADES;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
-    showToast('SQL copiado');
-  });
-  document.getElementById('btnSqlListo').addEventListener('click', () => location.reload());
-  document.getElementById('btnCerrarAyudaSql').addEventListener('click', closeSheet);
-}
-
 function renderEntidades() {
   const el = document.getElementById('entidadesList');
   const entidades = DB.getEntidades();
